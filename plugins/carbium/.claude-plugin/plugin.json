@@ -1,6 +1,6 @@
 {
   "name": "carbium",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Agent skills for Carbium's Solana APIs: JSON-RPC, DAS, WebSocket, the Carbon gRPC stream, and quote and swap at services.carbium.sh, webhooks and the account API at carbium.sh, and the DCA API at dex.carbium.io.",
   "author": {
     "name": "Carbium",

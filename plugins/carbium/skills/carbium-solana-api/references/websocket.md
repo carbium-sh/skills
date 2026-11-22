@@ -8,14 +8,14 @@ Contents, with the line each part starts on in this file:
 - Limits: line 72
 - Billing (credits): line 94
 - Subscription methods served: line 117
-- Coverage: what each subscription actually sees: line 163
-- blockSubscribe: line 201
-- signatureSubscribe semantics: line 215
-- Errors inside an open socket (JSON-RPC replies to your request): line 223
-- Server close codes: line 265
-- Quick start: line 286
-- Robust client (Node, `npm i ws`): line 330
-- Common mistakes: line 524
+- Coverage: what each subscription actually sees: line 162
+- blockSubscribe: line 200
+- signatureSubscribe semantics: line 214
+- Errors inside an open socket (JSON-RPC replies to your request): line 222
+- Server close codes: line 264
+- Quick start: line 285
+- Robust client (Node, `npm i ws`): line 329
+- Common mistakes: line 523
 
 Endpoint: `wss://services.carbium.sh` on port 443, the same domain and key as RPC. The wire protocol is Solana's (agave) pubsub: send `xSubscribe`, get back a numeric subscription id, then receive `xNotification` frames until you send `xUnsubscribe` or the socket closes.
 
@@ -128,7 +128,6 @@ Commitment values accepted: `processed`, `confirmed`, `finalized`. The legacy na
 | `rootSubscribe` / `rootUnsubscribe` | `rootNotification` | none, or `[]` | none | 5 |
 | `slotsUpdatesSubscribe` / `slotsUpdatesUnsubscribe` | `slotsUpdatesNotification` | none, or `[]` | none | 25 |
 | `blockSubscribe` / `blockUnsubscribe` | `blockNotification` | `["all" \| {"mentionsAccountOrProgram": pubkey}, opts?]` | `commitment` (`confirmed`/`finalized` only, default `finalized`), `encoding` (`json` default, `base64`, `base58`), `transactionDetails` (`full` default, `signatures`, `none`), `showRewards` (default `true`), `maxSupportedTransactionVersion` | 200 |
-| `voteSubscribe` | refused: `-32601`, Alpenglow removes vote transactions from blocks | none | none | 0 |
 | `getVersion` | (reply only) | none | none | 0 |
 
 Option rules:

@@ -24,7 +24,7 @@ Endpoint: `POST https://services.carbium.sh` (port 443). One request is one JSON
 
 | Rule | Value | If broken |
 |---|---|---|
-| HTTP method | `POST` only. `GET`/`HEAD /livez` is the keyless health check (bodiless 204). Any other non-POST gets a bodiless 404. `OPTIONS` is the CORS preflight (204). | 404 or 405 |
+| HTTP method | `POST` only. `GET`/`HEAD /livez` is the keyless health check (bodiless 204). `GET /cq1/quote` is the quote by query string (see Quote and swap). Any other non-POST gets a bodiless 404. `OPTIONS` is the CORS preflight (204). | 404 or 405 |
 | Credential | The full raw key (`c_serv_...`). Carriers, in the order the door reads them: `x-api-key` header, `authorization: Bearer <key>`, first path segment `https://services.carbium.sh/<key>`, query `?api-key=` / `?api_key=` / `?apiKey=`, then `x-token` header. Prefer the header. | 401 `-32001` |
 | Body size | at most 50 KB (1 KB = 1,024 bytes) | HTTP 413, `-32600` `request body exceeds the byte cap` |
 | Key order | `"method"` must come BEFORE `"params"` in each request object, and must sit within the first 1,024 bytes of the object. A single `"method"` key per object. | HTTP 400 `-32600` `params before method` / `method beyond position cap` / `duplicate method key` |

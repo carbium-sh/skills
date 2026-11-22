@@ -16,7 +16,7 @@ Contents, with the line each part starts on in this file:
 - `health`: line 240
 - Quote plans and what counts: line 244
 
-The quote plane uses JSON-RPC 2.0 over HTTPS at `POST https://services.carbium.sh`, on the same endpoint and with the same key carriers as RPC. It has four verbs: `quote`, `swap`, `prices` and `health`. There are no REST paths: `POST /quote` is not an endpoint, so put the method name in the JSON body.
+The quote plane uses JSON-RPC 2.0 over HTTPS at `POST https://services.carbium.sh`, on the same endpoint and with the same key carriers as RPC. It has four verbs: `quote`, `swap`, `prices` and `health`. `POST /quote` is not an endpoint, so put the method name in the JSON body. The one REST path is `GET /cq1/quote`, a quote by query string under the same key, plan and rate (the docs list its parameters).
 
 Rules an agent must follow:
 - Send one quote-plane call per HTTP request. A batch that contains `quote`, `swap` or `prices` is refused whole with HTTP 400 `-32600 "quote is not batchable"`, and each element of the batch gets that error. A batch that contains `health` is refused with HTTP 400 `-32602 "quote is not batchable"` and `id: null`.

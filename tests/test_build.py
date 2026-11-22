@@ -23,6 +23,20 @@ spec = importlib.util.spec_from_file_location("build_skills", SCRIPT)
 build = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(build)
 GUIDE = SOURCE.read_text(encoding="utf-8")
+# The guide without its closing Testing and Support sections, for the tests that add them: cut at the first of
+# them, found the way the build finds sections (outside code fences).
+_ROWS = GUIDE.split("\n")
+_AT = min((i for i in build.headings(_ROWS, "## ") if _ROWS[i][3:] in ("Testing", "Support")), default=len(_ROWS))
+BASE = "\n".join(_ROWS[:_AT]).rstrip("\n") + "\n"
+
+
+def unquoted(text):
+    """The guide with its description written unquoted, as a guide may serve it."""
+    rows = text.split("\n")
+    value = rows[2][len("description: "):]
+    if value.startswith('"'):
+        rows[2] = "description: " + json.loads(value)
+    return "\n".join(rows)
 
 
 def run(out, *sources):
@@ -136,13 +150,13 @@ class Split(unittest.TestCase):
     def test_testing_and_support_go_to_the_index_when_present(self):
         for tail in ("\n## Testing\n\nHow to test.\n", "\n## Testing\n\nHow to test.\n\n## Support\n\nWho to ask.\n"):
             with self.subTest(tail=tail):
-                error, files = build_with(GUIDE + tail)
+                error, files = build_with(BASE + tail)
                 self.assertEqual(error, "")
                 self.assertTrue(files["SKILL.md"].endswith(tail[1:].encode()))
 
     def test_a_section_the_table_does_not_name_fails_the_build(self):
         tail = "\n## Testing\n\nHow to test.\n\n## Support\n\nWho to ask.\n\n## Benchmarks\n\nNumbers.\n"
-        error, _ = build_with(GUIDE + tail)
+        error, _ = build_with(BASE + tail)
         self.assertIn("the guide's ## sections differ from its sections in GUIDES", error)
 
     def test_a_guide_with_no_entry_in_guides_fails_the_build(self):
@@ -158,12 +172,23 @@ class Split(unittest.TestCase):
         self.assertIn("references/old.md: not written by this build; remove it", error)
 
     def test_only_an_unquoted_description_is_quoted(self):
-        main = build_with()[1]["SKILL.md"].decode().split("\n")
-        guide = GUIDE.split("\n")
+        guide = unquoted(GUIDE).split("\n")
+        main = build_with("\n".join(guide))[1]["SKILL.md"].decode().split("\n")
         self.assertEqual(main[2], "description: " + json.dumps(guide[2][len("description: "):], ensure_ascii=False))
         self.assertEqual(main[:2] + main[3:4], guide[:2] + guide[3:4])
+        # the quoted description built above, given to the build again, stays as it is
+        again = build_with("\n".join(main[:3] + guide[3:]))[1]["SKILL.md"].decode().split("\n")
+        self.assertEqual(again[:4], main[:4])
         dca = build_with(source=DCA_SOURCE)[1]["SKILL.md"].decode().split("\n")
         self.assertEqual(dca[:4], DCA_SOURCE.read_text(encoding="utf-8").split("\n")[:4])
+
+    def test_a_single_quoted_or_malformed_description_fails_the_build(self):
+        for value, why in (("'Use carbium'", "is single-quoted"), ('"Use carbium" # v2', "is not one JSON string")):
+            with self.subTest(value=value):
+                rows = GUIDE.split("\n")
+                rows[2] = "description: " + value
+                error, _ = build_with("\n".join(rows))
+                self.assertIn(why, error)
 
     def test_an_overlong_description_fails_the_build(self):
         rows = GUIDE.split("\n")

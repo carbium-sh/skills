@@ -23,13 +23,17 @@ text+='|(^|[^0-9a-f:])f[cd][0-9a-f]{2}:[0-9a-f]{0,4}:'
 host='([a-z0-9-]+[.])+carbium[.](sh|io)'
 public=' services.carbium.sh dex.carbium.io tokens.carbium.io www.carbium.io docs.carbium.io '
 
+stop() { echo "leak-check: $1" >&2; exit 2; }
+
 # More patterns, one extended regular expression a line, from a file kept outside every repo (when it exists).
+# A last line with no newline counts; a pattern that does not compile stops the check, it never passes as clean.
 extra=${LEAK_CHECK_EXTRA:-${HOME:-}/.config/carbium/leak-check-extra}
 if [ -r "$extra" ]; then
-  while IFS= read -r more; do [ -z "$more" ] || text+="|$more"; done <"$extra"
+  while IFS= read -r more || [ -n "$more" ]; do [ -z "$more" ] || text+="|$more"; done <"$extra"
+  compiles=0
+  grep -E -e "$text" </dev/null >/dev/null 2>&1 || compiles=$?
+  [ "$compiles" -le 1 ] || stop "a pattern in $extra does not compile"
 fi
-
-stop() { echo "leak-check: $1" >&2; exit 2; }
 commits=$(git rev-list "$@") || stop "cannot list the commits to check"
 objects=$(git rev-list --objects "$@") || stop "cannot list the objects to check"
 tmp=$(mktemp) || stop "cannot make a temporary file"

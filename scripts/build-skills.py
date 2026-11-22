@@ -182,10 +182,19 @@ def front_matter(lines):
 
 def rewrite(lines):
     """The text each guide line must have in the output: the guide's own, except a front matter
-    description that is not quoted, which is double-quoted so the front matter parses as YAML."""
+    description that is not quoted, which is double-quoted so the front matter parses as YAML. A
+    single-quoted description, or a double-quoted one that is not one JSON string, fails the build."""
     out, i = list(lines), front_matter(lines)["description"]
     value = lines[i][len("description: "):]
-    if not value.startswith('"'):
+    if value.startswith("'"):
+        raise BuildError(["guide: its description is single-quoted; this build reads a plain or a double-quoted one"])
+    if value.startswith('"'):
+        try:
+            if not isinstance(json.loads(value), str):
+                raise ValueError
+        except ValueError:
+            raise BuildError(["guide: its double-quoted description is not one JSON string"]) from None
+    else:
         out[i] = "description: " + json.dumps(value, ensure_ascii=False)
     return out
 

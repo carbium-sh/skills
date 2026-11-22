@@ -97,3 +97,19 @@ Every other section of the guide is its own file under `references/`. Open the o
 - Expecting `accountSubscribe`, or a gRPC `accounts` list, to stream a plain SOL wallet.
 - Other providers' quote params (`inputMint`, `outputMint`, `amount`, `onlyDirectRoutes`): this quote takes `src_mint`, `dst_mint`, `amount_in`, `slippage_bps`, an optional `dex`, an optional `txVersion` and an optional `swapTag`, and refuses any other name.
 
+
+## Testing
+
+Every call reaches Solana mainnet. A transaction you sign and send moves real funds.
+
+- **Is it up, with no key:** `GET https://services.carbium.sh/livez` answers 204. The stream's `grpc.health.v1.Health/Check` answers `SERVING`.
+- **First call with a key:** `getHealth` or `getSlot`, 1 credit each.
+- **The quote API costs 0 credits.** `quote`, `swap` and `prices` count against the quote plan's rate (on the free quote plan also against the shared budget below), and `health` against the account's cached-read rate. `quote` builds nothing and moves nothing. `swap` returns an unsigned transaction: nothing happens until a wallet signs and sends it.
+- **The free plan is enough for a test:** one free grant of credits, once (`GET /v1/balance` shows `granted`), 1 key, 5 cached reads a second, 3 DAS calls a second, 5 WebSocket connections and 10 subscriptions. The carbon stream and webhooks need the DEV, BUSINESS or PRO plan. `POST /v1/webhooks/{id}/test` sends one signed test delivery, billed as one event when it is delivered.
+- **In tests and CI:** one account, one key held as a secret, a slow steady rate well under the plan's limit. Free callers on one network share 20 requests a second.
+- **Never probe, scan or load test the service without written consent** ([Terms](https://carbium.sh/terms), 6.7). To time it, use the capped run on the [benchmark page](https://carbium.sh/benchmark.html). A free account refused for rate in most hours of a day is suspended.
+- A refused call costs 0 credits and still spends rate: never loop on a 4xx. Two refusals do bill: a `getTransactionsForAddress` walk refused after it made upstream calls, and a send whose preflight failed.
+
+## Support
+
+Write to support@carbium.sh. Send the `x-request-id` of the answer you are asking about when it has one (the `x-subscription-id` for the carbon stream), the UTC time and the method. For a payment, send its `id` from `GET /v1/payments`, and for USDC or USDT also the transaction signature. Never send a raw API key: send its dashboard prefix (`c_serv_` plus four characters). Security reports: [security.txt](https://carbium.sh/.well-known/security.txt).

@@ -1,6 +1,6 @@
 ---
 name: carbium-solana-api
-description: Use carbium's Solana developer API at services.carbium.sh: JSON-RPC, WebSocket subscriptions, the Yellowstone gRPC stream, and a quote API that returns route quotes and unsigned transactions across 17 on-chain venue families for your own wallet to sign. An agent with only a Solana keypair can sign up, read its API key, add the free Quote plan and buy a plan over HTTPS, with no browser or email. Covers sign-up, auth, every limit and price, every error with the action to take, and complete JavaScript clients. Use it to get a Solana API key, read Solana state, subscribe to accounts, slots, logs or signatures, stream transactions, or get a route quote and an unsigned transaction.
+description: "Use carbium's Solana developer API at services.carbium.sh: JSON-RPC, WebSocket subscriptions, the Yellowstone gRPC stream, and a quote API that returns route quotes and unsigned transactions across 17 on-chain venue families for your own wallet to sign. An agent with only a Solana keypair can sign up, read its API key, add the free Quote plan and buy a plan over HTTPS, with no browser or email. Covers sign-up, auth, every limit and price, every error with the action to take, and complete JavaScript clients. Use it to get a Solana API key, read Solana state, subscribe to accounts, slots, logs or signatures, stream transactions, or get a route quote and an unsigned transaction."
 ---
 
 # carbium services (Solana node API)
@@ -77,7 +77,7 @@ Endpoint: `POST https://services.carbium.sh` (port 443). One request is one JSON
 
 | Rule | Value | If broken |
 |---|---|---|
-| HTTP method | `POST` only. `GET`/`HEAD /livez` is the keyless health check (bodiless 204). Any other non-POST gets a bodiless 404. `OPTIONS` is the CORS preflight (204). | 404 or 405 |
+| HTTP method | `POST` only. `GET`/`HEAD /livez` is the keyless health check (bodiless 204). `GET /cq1/quote` is the quote by query string (see Quote and swap). Any other non-POST gets a bodiless 404. `OPTIONS` is the CORS preflight (204). | 404 or 405 |
 | Credential | The full raw key (`c_serv_...`). Carriers, in the order the door reads them: `x-api-key` header, `authorization: Bearer <key>`, first path segment `https://services.carbium.sh/<key>`, query `?api-key=` / `?api_key=` / `?apiKey=`, then `x-token` header. Prefer the header. | 401 `-32001` |
 | Body size | at most 50 KB (1 KB = 1,024 bytes) | HTTP 413, `-32600` `request body exceeds the byte cap` |
 | Key order | `"method"` must come BEFORE `"params"` in each request object, and must sit within the first 1,024 bytes of the object. A single `"method"` key per object. | HTTP 400 `-32600` `params before method` / `method beyond position cap` / `duplicate method key` |
@@ -821,7 +821,6 @@ Commitment values accepted: `processed`, `confirmed`, `finalized`. The legacy na
 | `rootSubscribe` / `rootUnsubscribe` | `rootNotification` | none, or `[]` | none | 5 |
 | `slotsUpdatesSubscribe` / `slotsUpdatesUnsubscribe` | `slotsUpdatesNotification` | none, or `[]` | none | 25 |
 | `blockSubscribe` / `blockUnsubscribe` | `blockNotification` | `["all" \| {"mentionsAccountOrProgram": pubkey}, opts?]` | `commitment` (`confirmed`/`finalized` only, default `finalized`), `encoding` (`json` default, `base64`, `base58`), `transactionDetails` (`full` default, `signatures`, `none`), `showRewards` (default `true`), `maxSupportedTransactionVersion` | 200 |
-| `voteSubscribe` | refused: `-32601`, Alpenglow removes vote transactions from blocks | none | none | 0 |
 | `getVersion` | (reply only) | none | none | 0 |
 
 Option rules:
@@ -1722,7 +1721,7 @@ A `paused` webhook with a reason comes back by itself once the cause is lifted.
 
 ## Quote and swap (`quote`, `swap`, `prices`, `health`)
 
-The quote plane uses JSON-RPC 2.0 over HTTPS at `POST https://services.carbium.sh`, on the same endpoint and with the same key carriers as RPC. It has four verbs: `quote`, `swap`, `prices` and `health`. There are no REST paths: `POST /quote` is not an endpoint, so put the method name in the JSON body.
+The quote plane uses JSON-RPC 2.0 over HTTPS at `POST https://services.carbium.sh`, on the same endpoint and with the same key carriers as RPC. It has four verbs: `quote`, `swap`, `prices` and `health`. `POST /quote` is not an endpoint, so put the method name in the JSON body. The one REST path is `GET /cq1/quote`, a quote by query string under the same key, plan and rate (the docs list its parameters).
 
 Rules an agent must follow:
 - Send one quote-plane call per HTTP request. A batch that contains `quote`, `swap` or `prices` is refused whole with HTTP 400 `-32600 "quote is not batchable"`, and each element of the batch gets that error. A batch that contains `health` is refused with HTTP 400 `-32602 "quote is not batchable"` and `id: null`.
@@ -2688,3 +2687,19 @@ The person revokes it on the ACCOUNT page, and its next call answers 401. Until 
 - Expecting `accountSubscribe`, or a gRPC `accounts` list, to stream a plain SOL wallet.
 - Other providers' quote params (`inputMint`, `outputMint`, `amount`, `onlyDirectRoutes`): this quote takes `src_mint`, `dst_mint`, `amount_in`, `slippage_bps`, an optional `dex`, an optional `txVersion` and an optional `swapTag`, and refuses any other name.
 
+
+## Testing
+
+Every call reaches Solana mainnet. A transaction you sign and send moves real funds.
+
+- **Is it up, with no key:** `GET https://services.carbium.sh/livez` answers 204. The stream's `grpc.health.v1.Health/Check` answers `SERVING`.
+- **First call with a key:** `getHealth` or `getSlot`, 1 credit each.
+- **The quote API costs 0 credits.** `quote`, `swap` and `prices` count against the quote plan's rate (on the free quote plan also against the shared budget below), and `health` against the account's cached-read rate. `quote` builds nothing and moves nothing. `swap` returns an unsigned transaction: nothing happens until a wallet signs and sends it.
+- **The free plan is enough for a test:** one free grant of credits, once (`GET /v1/balance` shows `granted`), 1 key, 5 cached reads a second, 3 DAS calls a second, 5 WebSocket connections and 10 subscriptions. The carbon stream and webhooks need the DEV, BUSINESS or PRO plan. `POST /v1/webhooks/{id}/test` sends one signed test delivery, billed as one event when it is delivered.
+- **In tests and CI:** one account, one key held as a secret, a slow steady rate well under the plan's limit. Free callers on one network share 20 requests a second.
+- **Never probe, scan or load test the service without written consent** ([Terms](https://carbium.sh/terms), 6.7). To time it, use the capped run on the [benchmark page](https://carbium.sh/benchmark.html). A free account refused for rate in most hours of a day is suspended.
+- A refused call costs 0 credits and still spends rate: never loop on a 4xx. Two refusals do bill: a `getTransactionsForAddress` walk refused after it made upstream calls, and a send whose preflight failed.
+
+## Support
+
+Write to support@carbium.sh. Send the `x-request-id` of the answer you are asking about when it has one (the `x-subscription-id` for the carbon stream), the UTC time and the method. For a payment, send its `id` from `GET /v1/payments`, and for USDC or USDT also the transaction signature. Never send a raw API key: send its dashboard prefix (`c_serv_` plus four characters). Security reports: [security.txt](https://carbium.sh/.well-known/security.txt).
