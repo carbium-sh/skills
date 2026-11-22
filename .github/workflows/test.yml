@@ -1,0 +1,23 @@
+name: test
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+      - name: Rebuild the skills from the committed guides
+        run: python3 scripts/build-skills.py source/carbium-skill.md source/carbium-dca-skill.md
+      - name: Fail if the rebuild differs from what is committed
+        run: git diff --exit-code && test -z "$(git status --porcelain)"
+      - run: python3 -m unittest discover -s tests -v
+      - name: Fail if the skills changed and the plugin version did not
+        run: |
+          version() { git show "$1:plugins/carbium/.claude-plugin/plugin.json" 2>/dev/null | python3 -c 'import json, sys; print(json.load(sys.stdin).get("version"))' 2>/dev/null; }
+          git rev-parse -q --verify HEAD~1 >/dev/null || exit 0
+          git diff --quiet HEAD~1 HEAD -- plugins/carbium/skills && exit 0
+          [ "$(version HEAD~1)" != "$(version HEAD)" ] || { echo "the skills changed since the commit before, and the plugin version is still $(version HEAD)"; exit 1; }

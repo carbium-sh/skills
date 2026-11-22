@@ -1,0 +1,6 @@
+---
+description: Use the carbium-solana-api and carbium-dca skills for code that calls Carbium's Solana APIs at services.carbium.sh, the account API at carbium.sh or the DCA API at dex.carbium.io
+alwaysApply: false
+---
+
+Before writing code that calls services.carbium.sh or carbium.sh, read the carbium-solana-api skill in this plugin and follow its "Read this first" rules. Before writing code that calls the DCA API at dex.carbium.io, read the carbium-dca skill.

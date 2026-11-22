@@ -1,0 +1,20 @@
+{
+  "name": "carbium",
+  "interface": {
+    "displayName": "Carbium"
+  },
+  "plugins": [
+    {
+      "name": "carbium",
+      "source": {
+        "source": "local",
+        "path": "./plugins/carbium"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer Tools"
+    }
+  ]
+}
