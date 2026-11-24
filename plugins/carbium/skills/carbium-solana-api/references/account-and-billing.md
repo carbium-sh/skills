@@ -274,7 +274,7 @@ The plans are FREE, DEV, BUSINESS (`buss` on the wire) and PRO, each by the mont
 - `plans[]`, one entry per paid plan: `tier`, `amount_minor` (US cents), `currency`, `period` (`month`), `sellable`, `recurring` (also sold as auto-renew), `card` (sold by card here) and `credit_grant` (the credits each paid month adds; `null` means unmetered).
 - `quote[]`: the Quote module's plans, with their `rps`.
 
-Never hard-code a price. Read this endpoint. Per-plan rates and connection limits are in the RPC, WebSocket and stream sections. The quote ladder is under Quote plans and what counts.
+Never hard-code a price. Read this endpoint. Per-plan rates and connection limits are in the [RPC](https://carbium.sh/skill/rpc.md), [WebSocket](https://carbium.sh/skill/websocket.md) and [stream](https://carbium.sh/skill/stream.md) sections. The quote ladder is under [Quote plans and what counts](https://carbium.sh/skill/quote.md).
 
 - **Moving up:** you can move up at any time, except by card for one month while another plan renews on the card (see Paying by card or in USDC or USDT). The unused part of the current term carries over by value.
 - **Same plan again:** buying it extends its term. While it renews by card, buy it for one month or in USDC or USDT.

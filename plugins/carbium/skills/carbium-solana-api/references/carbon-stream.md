@@ -14,7 +14,7 @@ Contents, with the line each part starts on in this file:
 - Errors and what to do: line 187
 - Unary helpers: line 237
 - Reading frames in JS (v8): line 251
-- Robust client (Node 18+, `@triton-one/yellowstone-grpc` v8): line 260
+- Robust client (Node 20.18+, `@triton-one/yellowstone-grpc` v8): line 260
 - grpcurl (debugging only): line 350
 - Agent checklist: line 361
 
@@ -135,7 +135,7 @@ The stream serves one shared upstream feed. A filter can only return what that f
   - the six sysvars: `SysvarC1ock…`, `SysvarEpochSchedu1e…`, `SysvarRent…`, `SysvarS1otHashes…`, `SysvarS1otHistory…`, `SysvarStakeHistory…`
   - accounts of these indexed programs: `ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL`, `AddressLookupTab1e1111111111111111111111111`, `MNFSTqtC93rEfYHB6hF82sKdZpUDFWkViLByLd1k1Ms`, `SPoo1Ku8WFXoNDMHPsrGSTSG1Y47rzgn41SLUNakuHy`, `SP12tWFxD9oJsVWNavTTBZvMbA6gkAmxtVgxdqvyvhY`, `SPMBzsVUuoHA4Jm6KunbsotaahvVikZs1JyTW6iJvbn`, `ALPHAQmeA7bjrVuccPsYPiCvsi428SNwte66Srvs4pHA`, `REALQqNEomY6cQGZJUGwywTBD2UmDT32rZcNnfxQ5N2`, `5ocnV1qiCgaQR8Jb8xWnVbApfaygJ8tNoZfgPwsgx9kx`, `5quBtoiQqxF9Jv6KYKctB59NT3gtJD2Y65kdnB1Uev3h`, `9H6tua7jkLhdm3w8BvgpTn5LZNU7g4ZynDmCiNN3q6Rp`, `9W959DqEETiGZocYWCQPaJ6sBmUzgfxXfqGeTEdp3aQP`, `DjVE6JNiYqPL2QXyCUUh8rNjHrbz9hXHNYt99MQ59qw1`, `HpNfyc2Saw7RKkQd8nEL4khUcuPhQ7WwY1B2qjx8jxFq`, `goonuddtQRrWqqn5nFyczVKaie28f3kDkHWkHtURSLE`, `pfeeUxB6jkeY1Hxd7CsFCAjcbHA9rWtchMGdZ6VojVZ`
 - **System-owned wallets (SOL balances), Stake and Vote accounts do not stream as account updates**, except System accounts closing to 0 lamports and accounts holding more than 1,000,000 SOL. They are admitted, then stay silent. A stream that delivers no data frame books 0 credits. In a live test, 8 busy Jito tip accounts gave 0 account frames in 15 s, while a `transactions` filter on the same accounts gave 740 frames in 6 s. To follow a wallet, subscribe `transactions` with `accountInclude: [wallet]` and read `meta.preBalances`/`postBalances`, or poll `getBalance` over RPC.
-- **No startup snapshot.** An account stream sends only writes made after it opens. Load the current state with RPC `getMultipleAccounts` (up to 100 keys per call on DEV and BUSINESS, 300 on PRO; see Point reads in the RPC section) first. Then apply stream updates, keeping the highest `(slot, writeVersion)` per pubkey.
+- **No startup snapshot.** An account stream sends only writes made after it opens. Load the current state with RPC `getMultipleAccounts` (up to 100 keys per call on DEV and BUSINESS, 300 on PRO; see Point reads in the [RPC section](https://carbium.sh/skill/rpc.md)) first. Then apply stream updates, keeping the highest `(slot, writeVersion)` per pubkey.
 - **Blocks are program-scoped.** A `blocks` frame carries only the transactions that touch these programs: `675kPX9M…`, `CAMMCzo5…`, `CPMMoo8L…`, `whirLbMi…`, `LBUZKhRx…`, `Eo7WjKq6…`, `cpamdpZC…`, `pAMMBay6…`, `PhoeNiXZ…`. `executedTransactionCount` still states the full block count. For full blocks, use RPC `getBlock` with `maxSupportedTransactionVersion: 1`.
 
 ### Fields that are refused
@@ -257,7 +257,7 @@ Same endpoint and metadata, 1 credit per call, at 5 / 30 / 100 / 500 req/s (FREE
 - `update.account.account`: `{ pubkey, lamports, owner, executable, rentEpoch, data, writeVersion, txnSignature }`, plus `update.account.slot`.
 - `update.transaction.transaction`: `{ signature, isVote, transaction, meta, index }`. `meta.err` is set on failed transactions. Every transaction version is carried, and the stream has no `maxSupportedTransactionVersion` parameter.
 
-### Robust client (Node 18+, `@triton-one/yellowstone-grpc` v8)
+### Robust client (Node 20.18+, `@triton-one/yellowstone-grpc` v8)
 
 ```js
 // npm i @triton-one/yellowstone-grpc@8 @solana/kit

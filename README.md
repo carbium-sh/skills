@@ -7,16 +7,14 @@ The `carbium` plugin gives your coding agent two of Carbium's guides as skills, 
 - `carbium-dca`, from https://carbium.io/docs/dca/skill.md: the DCA API at dex.carbium.io.
 
 Each skill is its guide word for word, cut at its sections. Its `SKILL.md` holds the opening sections and a table of
-the reference files, and every other section is a file under `references/`. The DAS part of the RPC section has a
-file of its own.
+the reference files, and every other section is a file under `references/`.
 
 ## Install
 
 Claude Code, from your shell:
 
 ```sh
-claude plugin marketplace add carbium-sh/skills
-claude plugin install carbium@carbium
+claude plugin marketplace add carbium-sh/skills && claude plugin install carbium@carbium
 ```
 
 In a session, run `/plugin marketplace add carbium-sh/skills` and then `/plugin install carbium@carbium`.
@@ -42,6 +40,16 @@ Other agents that read `SKILL.md` files, with the `skills` command line:
 ```sh
 npx skills add carbium-sh/skills
 ```
+
+## Update
+
+Each release is listed at https://github.com/carbium-sh/skills/releases.
+
+- Claude Code: `claude plugin marketplace update carbium && claude plugin update carbium@carbium`, then restart. To
+  get new versions by themselves, run `/plugin`, open the Marketplaces tab, select `carbium` and turn auto-update on.
+- Cursor: click "Refresh" on the imported repository, or turn on "Enable Auto Refresh".
+- Codex: `codex plugin marketplace upgrade carbium`.
+- The `skills` command line: `npx skills update`.
 
 ## Layout
 
@@ -69,7 +77,8 @@ python3 -m unittest discover -s tests
 Then raise the patch version in the same commit, the same in every manifest that carries one (the three `plugin.json`
 files and the Claude Code and Cursor marketplace files). Claude Code keeps an installed plugin on its cached copy until
 that version changes. The tests fail when the versions differ, and CI fails when the skills changed and the version
-did not.
+did not. After the push, tag the commit `v<version>` and publish a GitHub release for the tag. A daily run compares both
+guides with the copies here and opens an issue when one differs.
 
 The build needs only the standard library of Python 3. It cuts each guide at its `##` headings as its entry in the
 `GUIDES` table in the script lists them, and stops on a heading the entry doesn't have. Add one line for it there with
@@ -77,9 +86,9 @@ the file it goes to. A section after the reference sections can only go to `SKIL
 to front matter: a description that is not quoted gets double quotes, so it parses as YAML.
 
 The build adds only navigation: the Reference files table in `SKILL.md`, a contents list at the top of each reference
-file, a line in each file whose `#` links name headings in other files saying which file holds each one, a line in
-`SKILL.md` naming the files the guide's code fetches, and a line where the DAS part was. A `#` link names a heading
-that may be in another file of the same skill.
+file, a line in each file whose `#` links name headings in other files saying which file holds each one, and a line in
+`SKILL.md` naming the files the guide's code fetches. A `#` link names a heading that may be in another file of the
+same skill.
 
 Before it finishes, the build checks that every line of a guide lands in one file unchanged, that every file stays
 within its size limit, that every path and link resolves, every `#` link to a heading somewhere in the skill, and that

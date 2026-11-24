@@ -1,4 +1,4 @@
-### DAS: getAsset, getAssets, getAssetBatch, getAssetsByOwner, getAssetsByGroup, getAssetsByCreator, getAssetsByAuthority, searchAssets, getNftEditions, getTokenAccounts
+## DAS: getAsset, getAssets, getAssetBatch, getAssetsByOwner, getAssetsByGroup, getAssetsByCreator, getAssetsByAuthority, searchAssets, getNftEditions, getTokenAccounts
 
 Contents, with the line each part starts on in this file:
 
@@ -15,7 +15,7 @@ Contents, with the line each part starts on in this file:
 
 The ten Digital Asset Standard methods are JSON-RPC calls on the RPC endpoint, `POST https://services.carbium.sh`, with the same key. Answers come from our own index of the chain's finalized state, in the field names and answer shapes of the Helius DAS API, so a DAS client switches by its URL alone: `https://services.carbium.sh/?api-key=<KEY>`, or the key in the `x-api-key` header.
 
-#### Rules
+### Rules
 
 1. Send the Helius field names. `options` and `displayOptions` are the same. A display flag at the top level of `params` is an unknown field. `getAsset` also takes `params: ["<id>"]`. An unknown field gets `-32602` `unknown field ..., expected one of ...`. With the Metaplex Umi DAS plugin (2.1.1), set `dasApi({ heliusCompatibility: true })`. Without it, the plugin's `getNftEditions` and `getTokenAccounts` send `mintAddress` and `ownerAddress`, and those calls are refused.
 2. Page deep lists by cursor. Leave `page` out and pass the last answer's `cursor` until a page holds fewer than `limit` items. `cursor` goes alone. `before` and `after` set id bounds and can go together. None of the three goes with `page`, and without `page` only `sortBy` `id` works.
@@ -30,7 +30,7 @@ The ten Digital Asset Standard methods are JSON-RPC calls on the RPC endpoint, `
 11. `getTokenAccounts` takes `owner`, `mint` or both, sorts by account address, and its `cursor` is the last account's address. With `mint` alone it lists any number of holders by `cursor`, and `page` reaches the first 10,000. An owner with more than 10,000 token accounts is refused with `-32012`, and so is a fungible list of that owner (`showFungible`, or `searchAssets` `tokenType` `all` or `fungible`). Name both an owner and a mint instead.
 12. `getNftEditions` takes `mint`, `limit` and `page` only, and sorts by edition number. A `cursor` is refused as an unknown field, so page by `page`. `max_supply` is `null` when the supply is unlimited.
 
-#### Limits
+### Limits
 
 Each DAS call costs 1 credit and 1 cell, plus 1 cell for each 4 KB of body past the first, at 3 / 15 / 75 / 150 req/s (FREE / DEV / BUSINESS / PRO), counted per account, so all of an account's keys share one bucket, with a 150-cell burst on every plan. Each key holds 1 / 2 / 4 / 8 DAS calls in flight (FREE / DEV / BUSINESS / PRO), and a batch holds one place. A call over the rate waits for its turn when that comes within 1 s, and a call with no place in flight waits up to 3 s. One still not admitted gets 429.
 
@@ -45,11 +45,11 @@ Each DAS call costs 1 credit and 1 cell, plus 1 cell for each 4 KB of body past 
 | Answer | 8 MiB per call, or per whole batch |
 | Time | 5 s per call, and one 5 s limit for a whole batch |
 
-#### Billing
+### Billing
 
 Each served call costs 1 credit, and each served element of a batch costs 1, so a batch of three costs 3. These cost nothing: an error answer, a batch element that fails, times out or goes over the answer cap, a call refused before it runs (key, rate, credits, size) and the `nativeBalance` read. Every admitted call spends its rate cell, one that ends in an error included.
 
-#### Coverage
+### Coverage
 
 The index holds:
 - Token Metadata NFTs (`V1_NFT`), programmable NFTs (`ProgrammableNFT`), fungibles (`FungibleToken`, `FungibleAsset`), Core assets, collections and groups (`MplCoreAsset`, `MplCoreCollection`, `MplCoreGroup`), and mints with no metadata account (`Custom`), on SPL Token and Token-2022, the Token-2022 metadata extension included. Mint extensions appear in `mint_extensions`.
@@ -65,7 +65,7 @@ The index does not hold:
 - These fixed fields: `uses` is `null`, `royalty.target` is `null`, `royalty.locked` is `false`, and `compression` reads as uncompressed. A collection grouping appears only when the collection is verified. Plain list items leave out `mint_authority` and `freeze_authority`, which `getAsset` carries.
 - On `searchAssets`, `interface` `V1_PRINT` or `LEGACY_NFT` matches nothing.
 
-#### Errors
+### Errors
 
 Errors from the index come with HTTP 200 and their own code. A call refused before it runs comes with its own HTTP status. Decide by the code: the message can carry your own values, and an index error that arrives with no message reads `das upstream refused the request` under the same code.
 
@@ -99,7 +99,7 @@ Errors from the index come with HTTP 200 and their own code. A call refused befo
 | 200 | `-32603` | `Internal error`, `das upstream refused the request` | Retry with backoff a few times, then stop. |
 | 200 | `-32700` | `Parse error` | Send valid JSON-RPC 2.0: an object or array, `"jsonrpc": "2.0"`, an `id`, and params as an object or array. |
 
-#### Quick start
+### Quick start
 
 ```bash
 URL="https://services.carbium.sh"   # CARBIUM_KEY holds the full raw key
@@ -127,7 +127,7 @@ curl -s "$URL" -H 'content-type: application/json' -H "x-api-key: $CARBIUM_KEY" 
        {"jsonrpc":"2.0","id":2,"method":"getAssetsByGroup","params":{"groupKey":"collection","groupValue":"<COLLECTION>","limit":10}}]'
 ```
 
-#### A client with retries (Node 18+, global fetch)
+### A client with retries (Node 18+, global fetch)
 
 ```js
 // carbium-das.mjs
@@ -181,7 +181,7 @@ let holders = 0;
 for await (const t of walk("getTokenAccounts", { mint: "<MINT>" })) if (t.amount > 0) holders++;
 ```
 
-#### How we test it
+### How we test it
 
 1. Pick real subjects of every kind the index holds: Token Metadata NFTs, programmable NFTs, master and print editions, Core assets and collections, Token-2022 mints with extensions, and fungibles. Add wallets, creators, authorities and collections to list. Our two sets hold 1,251 requests across the ten methods, naming 1,000 assets, and 167 collection requests, with paging, display options and bad inputs.
 2. Send every request to the reference DAS API once, one call at a time, and keep the answers.
@@ -199,7 +199,7 @@ Results, measured 2026-11-21:
 - The same status, code, message and answer shape on every request form of the ten methods, with `nativeBalance` in lamports.
 - The index within 16 slots of the finalized chain on 99.99% of 101,252 readings over six hours.
 
-#### Common mistakes
+### Common mistakes
 
 - Paging deep with `page`. Past 500,000 items it is refused, and past 10,000 on an unanchored searchAssets or on a mint's token accounts. Walk by `cursor`.
 - Reading `total` as the full count. It counts this page only. Ask for `showGrandTotal`.
@@ -210,7 +210,7 @@ Results, measured 2026-11-21:
 - Retrying a `-32602`, or looping on `-32022`.
 - Sending more calls at once than the plan's in-flight cap allows. Queue them per key.
 
-#### Agent checklist
+### Agent checklist
 
 - Call `https://services.carbium.sh` with the full key in `x-api-key` or `?api-key=`.
 - Send the Helius field names, and put `"method"` before `"params"`.

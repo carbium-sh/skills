@@ -6,17 +6,17 @@ Contents, with the line each part starts on in this file:
 - How to read any answer (decision order): line 42
 - Method catalogue: what is served and how: line 50
 - Not served, refused or absent: line 102
-- Scans: getProgramAccounts, getTokenAccountsByOwner, getTokenAccountsByDelegate: line 123
-- getSupply and getLargestAccounts (aggregate cache): line 160
-- Point reads: getAccountInfo, getMultipleAccounts: line 167
-- History: getTransaction, getBlock, getSignaturesForAddress, getTransactionsForAddress: line 173
-- Commitment and minContextSlot: line 194
-- Batching: line 199
-- Sending and simulating: line 207
-- Credits, rate and concurrency limits: line 217
-- Error playbook: line 235
-- JavaScript clients: line 318
-- Agent checklist: line 440
+- Scans: getProgramAccounts, getTokenAccountsByOwner, getTokenAccountsByDelegate: line 121
+- getSupply and getLargestAccounts (aggregate cache): line 158
+- Point reads: getAccountInfo, getMultipleAccounts: line 165
+- History: getTransaction, getBlock, getSignaturesForAddress, getTransactionsForAddress: line 171
+- Commitment and minContextSlot: line 192
+- Batching: line 197
+- Sending and simulating: line 205
+- Credits, rate and concurrency limits: line 215
+- Error playbook: line 233
+- JavaScript clients: line 316
+- Agent checklist: line 438
 
 Endpoint: `POST https://services.carbium.sh` (port 443). One request is one JSON object, or a JSON array of up to 100 objects for a batch. Every answer is JSON-RPC 2.0, and `id` echoes yours. "The door" below is the gateway at this address: it checks every call's key, rate and credits before anything serves it.
 
@@ -24,11 +24,11 @@ Endpoint: `POST https://services.carbium.sh` (port 443). One request is one JSON
 
 | Rule | Value | If broken |
 |---|---|---|
-| HTTP method | `POST` only. `GET`/`HEAD /livez` is the keyless health check (bodiless 204). `GET /cq1/quote` is the quote by query string (see Quote and swap). Any other non-POST gets a bodiless 404. `OPTIONS` is the CORS preflight (204). | 404 or 405 |
+| HTTP method | `POST` only. `GET`/`HEAD /livez` is the keyless health check (bodiless 204). `GET /cq1/quote` is the old quote path: use the `quote` method (see [Quote and swap](https://carbium.sh/skill/quote.md)). Any other non-POST gets a bodiless 404. `OPTIONS` is the CORS preflight (204). | 404 or 405 |
 | Credential | The full raw key (`c_serv_...`). Carriers, in the order the door reads them: `x-api-key` header, `authorization: Bearer <key>`, first path segment `https://services.carbium.sh/<key>`, query `?api-key=` / `?api_key=` / `?apiKey=`, then `x-token` header. Prefer the header. | 401 `-32001` |
 | Body size | at most 50 KB (1 KB = 1,024 bytes) | HTTP 413, `-32600` `request body exceeds the byte cap` |
 | Key order | `"method"` must come BEFORE `"params"` in each request object, and must sit within the first 1,024 bytes of the object. A single `"method"` key per object. | HTTP 400 `-32600` `params before method` / `method beyond position cap` / `duplicate method key` |
-| `params` | A JSON array (positional), as agave expects. The only exceptions are `getPriorityFeeEstimate`, `qn_estimatePriorityFees`, `quote`, `swap` and `prices`, which take an object. | 200 `-32602` `invalid params` |
+| `params` | A JSON array (positional), as agave expects. The exceptions take an object: `getPriorityFeeEstimate` and `qn_estimatePriorityFees` (or a one-element array holding it), the ten DAS methods (`getAsset` also takes `["<id>"]`), and `quote`, `swap` and `prices`. | 200 `-32602` `invalid params` |
 | Batch | 1 to 100 elements. An empty array `[]` is malformed. | 400 `-32600` `batch exceeds the cardinality cap` / `malformed json-rpc body` |
 | Compression | Send `accept-encoding: gzip` (or `zstd`). Bodies of 1,400 bytes or more come back compressed. Node `fetch` decodes gzip by itself. | (none) |
 | Connection | Reuse one keep-alive connection. The door holds idle connections for 600 s. | (none) |
@@ -110,15 +110,13 @@ Bursts: each class bucket holds max(1,024 cells, one second of the plan's rate),
 | Compressed NFTs (Bubblegum) | absent from every DAS answer | Not indexed. No DAS method returns them; do not page looking for them. |
 | Any unknown name | 200 `-32601` `method not found`, reason `UNKNOWN_METHOD` | Check the spelling. The answer is final and costs nothing, so retrying the same name never changes it. |
 | `getLargestAccounts` with `filter: circulating\|nonCirculating` | 501 `-32004`, reason `UNSUPPORTED_SHAPE`, message begins `getLargestAccounts filter=circulating\|nonCirculating is not served` | Use the unfiltered form, or `getSupply` for the circulating and non-circulating totals. |
-| Enhanced-transactions REST, Metis REST paths | absent | Read `getTransaction`, `getSignaturesForAddress` or `getTransactionsForAddress`. For push, use WSS, the gRPC stream or a webhook (see Webhooks). |
+| Enhanced-transactions REST, Metis REST paths | absent | Read `getTransaction`, `getSignaturesForAddress` or `getTransactionsForAddress`. For push, use WSS, the gRPC stream or a webhook (see [Webhooks](https://carbium.sh/skill/webhooks.md)). |
 
 Vendor-compatible extras that ARE served (single requests only):
 - `getPriorityFeeEstimate` (Helius shape). Params are `[{accountKeys?: string[] (≤128), transaction?: string, options?: {priorityLevel?: "Min"|"Low"|"Medium"|"High"|"VeryHigh"|"UnsafeMax", includeAllPriorityFeeLevels?: bool, recommended?: bool, lookbackSlots?: n (≤150), transactionEncoding?: "base58"|"base64"}}]`. It answers `{"priorityFeeEstimate":n,"priorityFeeLevels":{min,low,medium,high,veryHigh,unsafeMax}}` in micro-lamports per compute unit. The levels are percentiles 0/25/50/75/95/100. The default estimate is `medium`, and `recommended: true` returns `high`.
 - `qn_estimatePriorityFees` (QuickNode shape). Params are `{last_n_blocks?, account?, api_version?}`. It answers `{context:{slot}, per_compute_unit:{extreme,high,medium,low,percentiles{25,50,75,95,99}}, per_transaction:{...}, recommended}`.
 - Both fee methods are derived from this door's `getRecentPrioritizationFees` over up to 150 slots, cached 2 s. Bad params get 400 `-32602` with one of these messages: `params must be an object, or a one-element array holding one`, `accountKeys must be at most 128 base58 32-byte pubkeys`, `priorityLevel must be Min, Low, Medium, High, VeryHigh or UnsafeMax`, `this method is not batchable`.
 - `getTransactionsForAddress` (Helius shape): see History.
-
-The DAS part of this section is in `references/das.md`.
 
 ### Scans: getProgramAccounts, getTokenAccountsByOwner, getTokenAccountsByDelegate
 

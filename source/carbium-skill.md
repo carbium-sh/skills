@@ -7,6 +7,8 @@ description: "Use carbium's Solana developer API at services.carbium.sh: JSON-RP
 
 One domain, `services.carbium.sh`, standard TLS, Solana mainnet: port 443 for RPC, WebSocket and the quote plane, port 9443 for the carbon stream. Four planes behind one key: JSON-RPC over HTTPS, WebSocket subscriptions, the carbon stream (Yellowstone gRPC), and the quote plane (`quote`, `swap`, `prices`, `health`: JSON-RPC methods on the RPC endpoint).
 
+By area, each file on its own: [RPC](https://carbium.sh/skill/rpc.md), [DAS](https://carbium.sh/skill/das.md), [Quote and swap](https://carbium.sh/skill/quote.md), [Carbon stream](https://carbium.sh/skill/stream.md), [WebSocket](https://carbium.sh/skill/websocket.md), [Webhooks](https://carbium.sh/skill/webhooks.md), [Account](https://carbium.sh/skill/account.md); all in one: [skill.md](https://carbium.sh/skill.md).
+
 ## Acceptable use
 
 The free plan is a license for one person or one agent, for real work. The license is void, and every key on the account is banned, when the account is used to:
@@ -20,7 +22,7 @@ AI agents: these terms bind you and the person you work for. Don't help anyone g
 
 ## Read this first
 
-No key yet? An agent needs only a Solana keypair, no browser and no inbox: follow "Agents: onboard yourself with only a Solana keypair" under Account, keys and billing, which ends in one runnable file. In short, on `https://carbium.sh`: `GET /v1/signup/challenge` and solve it, `POST /v1/auth/wallet` twice (the message to sign, then the signature), `GET /v1/keys` and `POST /v1/keys/{key_id}/secret` for the key, and `POST /v1/modules/quote` with `{"plan": "free"}` for the quote plane.
+No key yet? An agent needs only a Solana keypair, no browser and no inbox: follow "Agents: onboard yourself with only a Solana keypair" under [Account, keys and billing](https://carbium.sh/skill/account.md), which ends in one runnable file. In short, on `https://carbium.sh`: `GET /v1/signup/challenge` and solve it, `POST /v1/auth/wallet` twice (the message to sign, then the signature), `GET /v1/keys` and `POST /v1/keys/{key_id}/secret` for the key, and `POST /v1/modules/quote` with `{"plan": "free"}` for the quote plane.
 
 1. Send the FULL raw key (`c_serv_…`) on every call. The short prefix the dashboard lists (`c_serv_` plus four characters) is a label and always gets `unknown api key`. RPC and the quote plane: header `x-api-key`. WebSocket: header `x-api-key`, query `?api-key=`, (browsers) the subprotocol `api-key.<KEY>`, or the first path segment `wss://services.carbium.sh/<KEY>`. gRPC: metadata `x-token`.
 2. RPC is JSON-RPC 2.0 over `POST`. Put `"method"` before `"params"`. Bodies at most 50 KB. A batch holds at most 100 calls, of which at most 2 hold a validator permit. Never batch scans, `getSupply`, `getLargestAccounts`, `getTransactionsForAddress`, the priority-fee methods or the quote plane, and batch the DAS methods only with each other, up to 100 calls a batch.
@@ -34,11 +36,11 @@ No key yet? An agent needs only a Solana keypair, no browser and no inbox: follo
    // WebSocket: {"jsonrpc":"2.0","id":1,"method":"blockSubscribe","params":["all",{"transactionDetails":"full","maxSupportedTransactionVersion":1}]}
    ```
 6. Scans (`getProgramAccounts`, `getTokenAccountsByOwner`, `getTokenAccountsByDelegate`): single requests, `encoding` `base64` or `jsonParsed`, at most 4 filters, at most 10,000 accounts per answer, no paging, no `sortResults`.
-7. History: `getSignaturesForAddress` pages come from our own address index, which keeps up to 30 days. `getTransaction` and `getBlock` end at the validator's ledger floor, which moves: read it with `getFirstAvailableBlock` before asking for older transactions or blocks. A `getTransactionsForAddress` call other than one descending page of signatures with no filter is a walk billed per upstream call, and `sortOrder: "asc"` needs `filters.slot.gte` and refuses a token filter (see History).
+7. History: `getSignaturesForAddress` pages come from our own address index, which keeps up to 30 days. `getTransaction` and `getBlock` end at the validator's ledger floor, which moves: read it with `getFirstAvailableBlock` before asking for older transactions or blocks. A `getTransactionsForAddress` call other than one descending page of signatures with no filter is a walk billed per upstream call, and `sortOrder: "asc"` needs `filters.slot.gte` and refuses a token filter (see [History](https://carbium.sh/skill/rpc.md)).
 8. WebSocket: one socket carries up to 1,000 subscriptions; route notifications by `params.subscription`; after any reconnect, resubscribe everything and re-read state over RPC; answer pings. `accountSubscribe` stays silent for accounts outside the carried set (plain SOL wallets): use `logsSubscribe` with `mentions`, plus `getBalance`.
 9. gRPC: DEV, BUSINESS or PRO keys only (FREE is refused). Put the whole filter set in the first request, ping every 10 s, raise the receive limit to 64 MiB, and seed state over RPC first (no startup snapshot). Follow wallets with `transactions.accountInclude`, not `accounts`.
 10. Quote, then swap within 30 s. `swap` returns one unsigned transaction (v0; v1 when the quote asked `txVersion: 1`): sign it as `user_pubkey` only, never modify it, send it with `skipPreflight: true`, confirm with `getSignatureStatuses`. On expiry or an on-chain slippage failure (`Custom:6004`), quote again.
-11. Quote-plane amounts are decimal strings in base units: use `BigInt`. Any `platformFee` is already inside `destAmountOut` and `minAmountOut`.
+11. Quote-plane amounts are decimal strings in base units: use `BigInt`. Any `platformFee` or `integratorFee` is already inside `destAmountOut` and `minAmountOut`.
 12. Refused calls cost 0 credits but still spend rate cells: never loop on a 4xx. The exceptions: a `getTransactionsForAddress` walk refused after it made upstream calls bills them, and a failed preflight send keeps its 75 credits. A 402 (`-32002 credits exhausted`) means the remaining credits cannot cover the call (for a `getTransactionsForAddress` walk, its worst case): stop, and renew or buy a plan on the dashboard. WebSocket and gRPC also bill 20 credits per MiB streamed.
 13. When you report a problem, quote `x-request-id` (RPC) or `x-subscription-id` (gRPC).
 
@@ -77,11 +79,11 @@ Endpoint: `POST https://services.carbium.sh` (port 443). One request is one JSON
 
 | Rule | Value | If broken |
 |---|---|---|
-| HTTP method | `POST` only. `GET`/`HEAD /livez` is the keyless health check (bodiless 204). `GET /cq1/quote` is the quote by query string (see Quote and swap). Any other non-POST gets a bodiless 404. `OPTIONS` is the CORS preflight (204). | 404 or 405 |
+| HTTP method | `POST` only. `GET`/`HEAD /livez` is the keyless health check (bodiless 204). `GET /cq1/quote` is the old quote path: use the `quote` method (see [Quote and swap](https://carbium.sh/skill/quote.md)). Any other non-POST gets a bodiless 404. `OPTIONS` is the CORS preflight (204). | 404 or 405 |
 | Credential | The full raw key (`c_serv_...`). Carriers, in the order the door reads them: `x-api-key` header, `authorization: Bearer <key>`, first path segment `https://services.carbium.sh/<key>`, query `?api-key=` / `?api_key=` / `?apiKey=`, then `x-token` header. Prefer the header. | 401 `-32001` |
 | Body size | at most 50 KB (1 KB = 1,024 bytes) | HTTP 413, `-32600` `request body exceeds the byte cap` |
 | Key order | `"method"` must come BEFORE `"params"` in each request object, and must sit within the first 1,024 bytes of the object. A single `"method"` key per object. | HTTP 400 `-32600` `params before method` / `method beyond position cap` / `duplicate method key` |
-| `params` | A JSON array (positional), as agave expects. The only exceptions are `getPriorityFeeEstimate`, `qn_estimatePriorityFees`, `quote`, `swap` and `prices`, which take an object. | 200 `-32602` `invalid params` |
+| `params` | A JSON array (positional), as agave expects. The exceptions take an object: `getPriorityFeeEstimate` and `qn_estimatePriorityFees` (or a one-element array holding it), the ten DAS methods (`getAsset` also takes `["<id>"]`), and `quote`, `swap` and `prices`. | 200 `-32602` `invalid params` |
 | Batch | 1 to 100 elements. An empty array `[]` is malformed. | 400 `-32600` `batch exceeds the cardinality cap` / `malformed json-rpc body` |
 | Compression | Send `accept-encoding: gzip` (or `zstd`). Bodies of 1,400 bytes or more come back compressed. Node `fetch` decodes gzip by itself. | (none) |
 | Connection | Reuse one keep-alive connection. The door holds idle connections for 600 s. | (none) |
@@ -163,223 +165,13 @@ Bursts: each class bucket holds max(1,024 cells, one second of the plan's rate),
 | Compressed NFTs (Bubblegum) | absent from every DAS answer | Not indexed. No DAS method returns them; do not page looking for them. |
 | Any unknown name | 200 `-32601` `method not found`, reason `UNKNOWN_METHOD` | Check the spelling. The answer is final and costs nothing, so retrying the same name never changes it. |
 | `getLargestAccounts` with `filter: circulating\|nonCirculating` | 501 `-32004`, reason `UNSUPPORTED_SHAPE`, message begins `getLargestAccounts filter=circulating\|nonCirculating is not served` | Use the unfiltered form, or `getSupply` for the circulating and non-circulating totals. |
-| Enhanced-transactions REST, Metis REST paths | absent | Read `getTransaction`, `getSignaturesForAddress` or `getTransactionsForAddress`. For push, use WSS, the gRPC stream or a webhook (see Webhooks). |
+| Enhanced-transactions REST, Metis REST paths | absent | Read `getTransaction`, `getSignaturesForAddress` or `getTransactionsForAddress`. For push, use WSS, the gRPC stream or a webhook (see [Webhooks](https://carbium.sh/skill/webhooks.md)). |
 
 Vendor-compatible extras that ARE served (single requests only):
 - `getPriorityFeeEstimate` (Helius shape). Params are `[{accountKeys?: string[] (≤128), transaction?: string, options?: {priorityLevel?: "Min"|"Low"|"Medium"|"High"|"VeryHigh"|"UnsafeMax", includeAllPriorityFeeLevels?: bool, recommended?: bool, lookbackSlots?: n (≤150), transactionEncoding?: "base58"|"base64"}}]`. It answers `{"priorityFeeEstimate":n,"priorityFeeLevels":{min,low,medium,high,veryHigh,unsafeMax}}` in micro-lamports per compute unit. The levels are percentiles 0/25/50/75/95/100. The default estimate is `medium`, and `recommended: true` returns `high`.
 - `qn_estimatePriorityFees` (QuickNode shape). Params are `{last_n_blocks?, account?, api_version?}`. It answers `{context:{slot}, per_compute_unit:{extreme,high,medium,low,percentiles{25,50,75,95,99}}, per_transaction:{...}, recommended}`.
 - Both fee methods are derived from this door's `getRecentPrioritizationFees` over up to 150 slots, cached 2 s. Bad params get 400 `-32602` with one of these messages: `params must be an object, or a one-element array holding one`, `accountKeys must be at most 128 base58 32-byte pubkeys`, `priorityLevel must be Min, Low, Medium, High, VeryHigh or UnsafeMax`, `this method is not batchable`.
 - `getTransactionsForAddress` (Helius shape): see History.
-
-### DAS: getAsset, getAssets, getAssetBatch, getAssetsByOwner, getAssetsByGroup, getAssetsByCreator, getAssetsByAuthority, searchAssets, getNftEditions, getTokenAccounts
-
-The ten Digital Asset Standard methods are JSON-RPC calls on the RPC endpoint, `POST https://services.carbium.sh`, with the same key. Answers come from our own index of the chain's finalized state, in the field names and answer shapes of the Helius DAS API, so a DAS client switches by its URL alone: `https://services.carbium.sh/?api-key=<KEY>`, or the key in the `x-api-key` header.
-
-#### Rules
-
-1. Send the Helius field names. `options` and `displayOptions` are the same. A display flag at the top level of `params` is an unknown field. `getAsset` also takes `params: ["<id>"]`. An unknown field gets `-32602` `unknown field ..., expected one of ...`. With the Metaplex Umi DAS plugin (2.1.1), set `dasApi({ heliusCompatibility: true })`. Without it, the plugin's `getNftEditions` and `getTokenAccounts` send `mintAddress` and `ownerAddress`, and those calls are refused.
-2. Page deep lists by cursor. Leave `page` out and pass the last answer's `cursor` until a page holds fewer than `limit` items. `cursor` goes alone. `before` and `after` set id bounds and can go together. None of the three goes with `page`, and without `page` only `sortBy` `id` works.
-3. `limit` goes up to 1,000, the default. `page` starts at 1, and `page` × `limit` stays at or under 500,000. `sortBy` takes `id`, `created`, `updated`, `recent_action` or `none`, with `sortDirection` `asc` or `desc`, and defaults to `id` `desc`. `created` and `none` return id order, as the index holds no creation time. `updated` and `recent_action` sort by the newest slot that wrote the asset.
-4. In a list answer, `total` counts the items on this page. `showGrandTotal` adds `grand_total`, the full count, on the `getAssetsBy*` lists and `searchAssets`, but not on one that includes fungibles; `getTokenAccounts` and `getNftEditions` carry none. `cursor` is the last item's id. It is absent on an empty page, in page mode (the answer carries `page`) and when you paged by `before` or `after`. `last_indexed_slot` is the newest finalized slot the index holds.
-5. `getAssets` and `getAssetBatch` are one call. They take at most 1,000 `ids`, repeats allowed, and return a positional array with `null` where an id is not held. An id that is not a valid address refuses the whole call with `-32602` `Pubkey Validation Err: <v> is invalid`.
-6. Batch DAS calls only with each other. A DAS batch answers HTTP 200 with an array in request order, each element with its own `id` and its own result or error. A batch takes all its cells at once, one per call plus one for each 4 KB of body past the first, so a full batch of 100 calls fits the 150-cell burst. It holds one place in flight, and its calls run one after another under one 5 s limit. A call still waiting at the limit comes back as `-32011` `das upstream timed out`, uncharged: send it again. A batch that mixes DAS with any other served method gets 400 `-32602` `this method is not batchable`, and a batch that holds an unknown name, a proof or signature method included, gets one 200 `-32601` `method not found` for the whole batch.
-7. `getAssetsByGroup` does not read `groupKey`: `groupValue` names a collection whatever the key says. The same holds for a `searchAssets` `grouping` in any of its forms: `["collection", v]`, `{"collection": v}` or `{"group_key": k, "group_value": v}`.
-8. `searchAssets` serves `ownerAddress`, `creatorAddress` with `creatorVerified`, `authorityAddress`, `grouping`, `interface`, `tokenType`, `frozen`, `delegate` and `burnt`. `tokenType` needs `ownerAddress` beside it and goes with neither `interface` nor `compressed`. `delegate` needs `ownerAddress` or `grouping`. Every other filter is refused by name with `-32602` ``this index does not serve the `<name>` filter``: `negate` (other than `false`), `conditionType` (other than `"all"`), `ownerType`, `supply`, `supplyMint`, `compressible`, `royaltyTargetType`, `royaltyTarget`, `royaltyAmount`, `jsonUri`, `not`, `name`, `collections`, `createdAt`, `collectionNft`, `isAgent`, `agentToken` and `assetSigner`. Apply those on your side.
-9. A `searchAssets` with no `ownerAddress`, `authorityAddress`, `creatorAddress` or `grouping` reaches its first 10,000 items by `page`; go on by `cursor`. It also refuses `showGrandTotal`, `sortBy` `updated` or `recent_action`, `burnt: true` and `interface` `MplCoreGroup`. Name one of the four to use them.
-10. `showNativeBalance` on `getAssetsByOwner`, and on `searchAssets` with `ownerAddress`, adds `nativeBalance: {"lamports": <balance>}`, with no `price_per_sol` or `total_price`. When the balance read takes more than 1 s, or a batch's 5 s limit runs out first, the answer comes without it. `showFungible` (getAssetsByOwner only; on searchAssets use `tokenType`), `showZeroBalance`, `showCollectionMetadata` and `showGrandTotal` change the answer, and `showUnverifiedCollections` adds `verified: true` to each grouping. `showRawData`, `requireFullIndex`, `showSystemMetadata`, `showClosedAccounts` and `showInscription` are accepted and change nothing.
-11. `getTokenAccounts` takes `owner`, `mint` or both, sorts by account address, and its `cursor` is the last account's address. With `mint` alone it lists any number of holders by `cursor`, and `page` reaches the first 10,000. An owner with more than 10,000 token accounts is refused with `-32012`, and so is a fungible list of that owner (`showFungible`, or `searchAssets` `tokenType` `all` or `fungible`). Name both an owner and a mint instead.
-12. `getNftEditions` takes `mint`, `limit` and `page` only, and sorts by edition number. A `cursor` is refused as an unknown field, so page by `page`. `max_supply` is `null` when the supply is unlimited.
-
-#### Limits
-
-Each DAS call costs 1 credit and 1 cell, plus 1 cell for each 4 KB of body past the first, at 3 / 15 / 75 / 150 req/s (FREE / DEV / BUSINESS / PRO), counted per account, so all of an account's keys share one bucket, with a 150-cell burst on every plan. Each key holds 1 / 2 / 4 / 8 DAS calls in flight (FREE / DEV / BUSINESS / PRO), and a batch holds one place. A call over the rate waits for its turn when that comes within 1 s, and a call with no place in flight waits up to 3 s. One still not admitted gets 429.
-
-| Size or time | Limit |
-|---|---|
-| Request body | 50 KB |
-| Batch | 100 calls |
-| `limit` | 1,000, also the default |
-| `ids` on getAssets and getAssetBatch | 1,000 |
-| `page` × `limit` | 500,000; 10,000 on a searchAssets with no owner, creator, authority or grouping, and on getTokenAccounts by mint |
-| Token accounts per owner | 10,000 |
-| Answer | 8 MiB per call, or per whole batch |
-| Time | 5 s per call, and one 5 s limit for a whole batch |
-
-#### Billing
-
-Each served call costs 1 credit, and each served element of a batch costs 1, so a batch of three costs 3. These cost nothing: an error answer, a batch element that fails, times out or goes over the answer cap, a call refused before it runs (key, rate, credits, size) and the `nativeBalance` read. Every admitted call spends its rate cell, one that ends in an error included.
-
-#### Coverage
-
-The index holds:
-- Token Metadata NFTs (`V1_NFT`), programmable NFTs (`ProgrammableNFT`), fungibles (`FungibleToken`, `FungibleAsset`), Core assets, collections and groups (`MplCoreAsset`, `MplCoreCollection`, `MplCoreGroup`), and mints with no metadata account (`Custom`), on SPL Token and Token-2022, the Token-2022 metadata extension included. Mint extensions appear in `mint_extensions`.
-- For Core: plugins, external plugins, `mpl_core_info` (`num_minted`, `current_size`), parent groups and `asset_signer`.
-- Editions. A master reports its print supply and maximum, and a print its `edition_number` and `master_edition_mint`.
-- Burnt assets. `getAsset` answers a burnt asset that has a metadata account with `burnt: true`, and a burnt mint with none answers not found. The `getAssetsBy*` lists leave burnt assets out, except burnt Core assets. `searchAssets` lists them unless `burnt` picks one side, except a token NFT burnt before the index began with no holder seen, which it never lists.
-- Mints with no metadata account. `getAsset` answers one with an empty `content`, as `Custom`, or as `FungibleToken` or `FungibleAsset` for a fungible mint. It appears in lists only among an owner's held fungibles. It shows the supply, decimals and extensions on chain. `getAsset` answers its `ownership.owner` as `""`, and an owner's held-fungibles list shows that owner and the state of their account.
-
-The index does not hold:
-- Compressed NFTs. They are absent from every answer. `compressed: true`, `tree` (with `ownerAddress` or `grouping`) and `tokenType` `compressedNft` (with `ownerAddress`) answer an empty page. The proof and signature methods (`getAssetProof`, `getAssetProofBatch`, `getAssetProofs`, `getAssetSignatures`, `getSignaturesForAsset`) answer `-32601`.
-- The off-chain JSON document. `content.json_uri` is its address only and is never fetched, so `content.files` is `[]`, `content.links` is `{}`, and `content.category` and the off-chain keys are absent. Fetch the document yourself when you need it.
-- Prices. `token_info` carries no `price_info`.
-- These fixed fields: `uses` is `null`, `royalty.target` is `null`, `royalty.locked` is `false`, and `compression` reads as uncompressed. A collection grouping appears only when the collection is verified. Plain list items leave out `mint_authority` and `freeze_authority`, which `getAsset` carries.
-- On `searchAssets`, `interface` `V1_PRINT` or `LEGACY_NFT` matches nothing.
-
-#### Errors
-
-Errors from the index come with HTTP 200 and their own code. A call refused before it runs comes with its own HTTP status. Decide by the code: the message can carry your own values, and an index error that arrives with no message reads `das upstream refused the request` under the same code.
-
-| HTTP | Code | Message | What to do |
-|---|---|---|---|
-| 200 | `-32000` | `Database Error: RecordNotFound Error: Asset Not Found` | The index holds no such asset (getAsset) or no such master edition (getNftEditions). Do not retry at once. |
-| 401, 403 | `-32001` | the key messages | Fix the key, its scope or the calling address. Do not retry. |
-| 402 | `-32002` | `credits exhausted` | Buy a plan or upgrade. Do not retry. |
-| 429 | `-32005` | `rate limit exceeded` (`RATE_LIMITED`) | Wait `retry-after-ms`, then retry. Lower your rate if it repeats. |
-| 429 | `-32005` | `DAS lane capacity exceeded: das_lane` (`SLOT_CAP_EXCEEDED`) | Too many calls in flight. Wait `retry-after-ms`, retry, and send fewer at once. |
-| 502 | `-32011` | `das upstream unreachable`, `das upstream error`, `das upstream read failed` | Retry with backoff. |
-| 502 | `-32011` | `das upstream response too large` | The answer is over 8 MiB. Ask for a smaller `limit` or fewer `ids`, or split the batch. Do not resend it unchanged. |
-| 503 | `-32011` | `compat verbs not initialised` | Retry with backoff a few times, then stop. |
-| 504, or 200 inside a batch | `-32011` | `das upstream timed out` | No answer within 5 s. Retry. For a list, ask for a smaller `limit`. In a batch, send that element again. |
-| 200 | `-32012` | `token accounts refused: the subject holds more than the hot store's 10000-account cap; name an owner and a mint` | Name both an owner and a mint. Do not retry. |
-| 200 | `-32012` | `showFungible refused: the owner holds more than the hot store's 10000 token accounts; list without it` | On getAssetsByOwner, list without `showFungible`. On searchAssets, ask for `tokenType` `nonFungible`. |
-| 200 | `-32021` | `index is behind the chain, retry` | The index trails the chain by more than 32 slots. Retry with backoff. |
-| 200 | `-32022` | `index is repairing a gap, retry later` | Retry later with long waits. Do not loop. |
-| 200 | `-32023` | `index is not built yet` | Retry later. |
-| 200 | `-32024` | `token accounts refused: the hot store deferred the read; retry` | Retry with backoff. |
-| 200 | `-32026` | `index is busy, retry`, `hot store is busy, retry` | Retry with jittered backoff. |
-| 413 | `-32600` | `request body exceeds the byte cap` | The body is over 50 KB. Split it. |
-| 400 | `-32600` | `batch exceeds the cardinality cap` | The batch has more than 100 calls. Split it. |
-| 400 | `-32600` | `malformed json-rpc body`, `duplicate method key`, `params before method`, `method beyond position cap` | Fix the body. Put `"method"` before `"params"`, within the first 1 KB. |
-| 200 | `-32601` | `method not found` | The method name is unknown, the proof and signature methods included. Do not retry. |
-| 400 | `-32602` | `this method is not batchable` | Batch DAS calls only with DAS calls. |
-| 200 | `-32602` | `missing field ...`, `unknown field ..., expected one of ...`, `invalid type: ...`, `invalid value: ...`, `unknown variant ...`, `Pubkey Validation Err: <v> is invalid`, `Validation Error: Invalid pubkey <v>`, `Cursor Validation Err: <v> is invalid`, `invalid params: ...`, `Validation Error: Must provide either 'owner' or 'mint'`, `Validation Error: Must provide 'mint'` | Fix the params. Do not retry. |
-| 200 | `-32602` | `Pagination Error. Limit should not be greater than 1000.`, `Pagination Error. Only one pagination parameter supported per query.`, `Pagination Error. No Pagination Method Selected.` (`page: 0`), `Pagination Sorting Error. Only sorting based on id is supported for this pagination option.`, `Batch Size Error. Batch size should not be greater than 1000.`, `Paginating beyond 500000 items is not supported. ...`, `Paginating beyond 10000 items of a search with no ... is not supported. ...`, `Paginating beyond 10000 token accounts of a mint is not supported. ...` | Fix the paging. Past a window, go on by `cursor`. |
-| 200 | `-32602` | ``this index does not serve the `<name>` filter``, ``this index serves the `delegate` filter only with `ownerAddress` or `grouping` ``, ``this index serves <what> on searchAssets only with `ownerAddress`, `authorityAddress`, `creatorAddress` or `grouping` ``, and the `token_type` and `tree` validation errors | Drop the filter and apply it on your side, or name an owner, creator, authority or grouping. |
-| 200 | `-32603` | `the index could not finish this read in time` | Narrow the request with a smaller `limit` or a named owner, creator, authority or grouping, then send it. |
-| 200 | `-32603` | `Internal error`, `das upstream refused the request` | Retry with backoff a few times, then stop. |
-| 200 | `-32700` | `Parse error` | Send valid JSON-RPC 2.0: an object or array, `"jsonrpc": "2.0"`, an `id`, and params as an object or array. |
-
-#### Quick start
-
-```bash
-URL="https://services.carbium.sh"   # CARBIUM_KEY holds the full raw key
-# one asset
-curl -s "$URL" -H 'content-type: application/json' -H "x-api-key: $CARBIUM_KEY" \
-  -d '{"jsonrpc":"2.0","id":1,"method":"getAsset","params":{"id":"<ASSET_ID>"}}'
-
-# a wallet's assets, page by page
-curl -s "$URL" -H 'content-type: application/json' -H "x-api-key: $CARBIUM_KEY" \
-  -d '{"jsonrpc":"2.0","id":1,"method":"getAssetsByOwner","params":{"ownerAddress":"<OWNER>","limit":1000}}'
-# next page: the same body plus "cursor":"<result.cursor>"; stop at a page of fewer than 1000 items
-
-# a search anchored on an owner
-curl -s "$URL" -H 'content-type: application/json' -H "x-api-key: $CARBIUM_KEY" \
-  -d '{"jsonrpc":"2.0","id":1,"method":"searchAssets","params":{"ownerAddress":"<OWNER>","tokenType":"nonFungible","limit":100}}'
-
-# every holder of a token, page by page
-curl -s "$URL" -H 'content-type: application/json' -H "x-api-key: $CARBIUM_KEY" \
-  -d '{"jsonrpc":"2.0","id":1,"method":"getTokenAccounts","params":{"mint":"<MINT>","limit":1000}}'
-# next page: the same body plus "cursor":"<result.cursor>"
-
-# a DAS batch of two: HTTP 200, an array in request order
-curl -s "$URL" -H 'content-type: application/json' -H "x-api-key: $CARBIUM_KEY" \
-  -d '[{"jsonrpc":"2.0","id":1,"method":"getAsset","params":{"id":"<ASSET_ID>"}},
-       {"jsonrpc":"2.0","id":2,"method":"getAssetsByGroup","params":{"groupKey":"collection","groupValue":"<COLLECTION>","limit":10}}]'
-```
-
-#### A client with retries (Node 18+, global fetch)
-
-```js
-// carbium-das.mjs
-const URL = "https://services.carbium.sh";
-const KEY = process.env.CARBIUM_KEY; // full raw key
-
-// Codes that waiting can fix. -32022 and -32023 need a later run: do not loop on them. Every other code is final, and so are
-// two messages that ask for a smaller request.
-const RETRY = new Set([-32005, -32011, -32021, -32024, -32026, -32603]);
-const LATER = new Set([-32022, -32023]);
-const NARROW = new Set(["das upstream response too large", "the index could not finish this read in time"]);
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-
-export class DasError extends Error {
-  constructor(status, e) {
-    super(`HTTP ${status} ${e?.code} ${e?.message}`);
-    Object.assign(this, { status, code: e?.code, later: LATER.has(e?.code) });
-  }
-}
-
-export async function das(method, params, { maxAttempts = 4 } = {}) {
-  const body = JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }); // method before params
-  for (let attempt = 1; ; attempt++) {
-    const res = await fetch(URL, { method: "POST", headers: { "content-type": "application/json", "x-api-key": KEY }, body });
-    const j = await res.json().catch(() => ({ error: { code: -32700, message: `HTTP ${res.status}, non-JSON body` } }));
-    if (!j.error) return j.result;
-    const e = j.error;
-    const retry = RETRY.has(e.code) && !NARROW.has(e.message);
-    if (!retry || attempt >= maxAttempts) throw new DasError(res.status, e);
-    const hint = Number(res.headers.get("retry-after-ms")) || Number(res.headers.get("retry-after")) * 1000 || 0;
-    await sleep(Math.max(hint, Math.min(250 * 2 ** (attempt - 1), 4000)) + Math.random() * 250);
-  }
-}
-
-// Every item of a list, by cursor. getTokenAccounts answers token_accounts; the other lists answer items.
-export async function* walk(method, params, limit = 1000) {
-  let cursor;
-  for (;;) {
-    const r = await das(method, { ...params, limit, ...(cursor && { cursor }) });
-    const rows = r.items ?? r.token_accounts;
-    yield* rows;
-    if (rows.length < limit || !r.cursor) return;
-    cursor = r.cursor;
-  }
-}
-
-// examples
-const asset = await das("getAsset", { id: "<ASSET_ID>" });
-for await (const a of walk("getAssetsByOwner", { ownerAddress: "<OWNER>" })) console.log(a.id, a.interface);
-let holders = 0;
-for await (const t of walk("getTokenAccounts", { mint: "<MINT>" })) if (t.amount > 0) holders++;
-```
-
-#### How we test it
-
-1. Pick real subjects of every kind the index holds: Token Metadata NFTs, programmable NFTs, master and print editions, Core assets and collections, Token-2022 mints with extensions, and fungibles. Add wallets, creators, authorities and collections to list. Our two sets hold 1,251 requests across the ten methods, naming 1,000 assets, and 167 collection requests, with paging, display options and bad inputs.
-2. Send every request to the reference DAS API once, one call at a time, and keep the answers.
-3. Send the same bodies to `https://services.carbium.sh`, one call at a time. Compare every field exactly by its JSON path, leaving out `last_indexed_slot` and `price_info` on both sides. Compare lists as the set of ids (`address` for token accounts, `mint` for editions) and their order. Compare errors by code, and by message with your own values cut out.
-4. Set aside the fields of the off-chain document behind `json_uri`, since the index does not fetch it. For any other difference, read the account on chain at `finalized` to see which answer the chain holds.
-5. Walk whole collections with `getAssetsByGroup` (`limit` 1000, `sortBy` id ascending) on both sides. Then ask for each collection's hashlist by id through `getAssetBatch`, 1,000 ids at a time, and compare the id sets. An id only the reference returns should be one it marks `burnt: true`.
-6. Walk every holder of a token with `getTokenAccounts` by `mint` and `cursor`, on both sides. Read any account found on one side only with `getMultipleAccounts` at `finalized`. It should be closed or empty.
-7. Send the exact bodies the Metaplex Umi DAS plugin 2.1.1 and the Helius SDK 3.5.0 send, the request bodies from the reference docs, 21 bad inputs and a batch. Compare HTTP status, error code and message, answer shape and row count.
-8. Compare `last_indexed_slot` with `getSlot` at `finalized`, many times over, to see how far the index trails the chain.
-
-Results, measured 2026-11-21:
-- 10,382 of 10,386 compared assets (99.96%) equal on every on-chain field.
-- Every live asset found and none extra across three Core collections walked whole (5,561, 2,222 and 374 assets) and a 6,202-asset hashlist asked by id.
-- Every holder with a balance returned once, for a token with more than 11,500 token accounts.
-- The same status, code, message and answer shape on every request form of the ten methods, with `nativeBalance` in lamports.
-- The index within 16 slots of the finalized chain on 99.99% of 101,252 readings over six hours.
-
-#### Common mistakes
-
-- Paging deep with `page`. Past 500,000 items it is refused, and past 10,000 on an unanchored searchAssets or on a mint's token accounts. Walk by `cursor`.
-- Reading `total` as the full count. It counts this page only. Ask for `showGrandTotal`.
-- Expecting images, attributes, `content.files` or `content.links` from the off-chain JSON. Fetch `content.json_uri` yourself.
-- Sorting by `created` and expecting creation order. It returns id order.
-- Mixing DAS and other RPC methods in one batch.
-- Using the Umi DAS plugin without `heliusCompatibility: true`.
-- Retrying a `-32602`, or looping on `-32022`.
-- Sending more calls at once than the plan's in-flight cap allows. Queue them per key.
-
-#### Agent checklist
-
-- Call `https://services.carbium.sh` with the full key in `x-api-key` or `?api-key=`.
-- Send the Helius field names, and put `"method"` before `"params"`.
-- Walk lists by `cursor` with `limit` 1000 until a page comes back short.
-- Keep calls in flight per key within your plan; a batch counts as one. Batch DAS calls only with each other, up to 100 a batch.
-- Retry `-32005`, `-32011`, `-32021`, `-32024`, `-32026` and `-32603` with jittered backoff, and honour `retry-after-ms`; narrow the request instead on `response too large` and `could not finish this read in time`. Retry `-32022` and `-32023` later. Stop on every other code.
-- Apply unserved `searchAssets` filters on your side. Name an owner, creator, authority or grouping before you use `showGrandTotal`, `burnt: true`, `interface` `MplCoreGroup` or the `updated` and `recent_action` sorts.
-- Fetch off-chain JSON yourself, and expect no prices and no compressed NFTs.
-- Budget 1 credit per served call.
 
 ### Scans: getProgramAccounts, getTokenAccountsByOwner, getTokenAccountsByDelegate
 
@@ -707,6 +499,216 @@ Kit returns u64 values as `bigint`. Kit builds `{id, jsonrpc, method, params}`, 
 5. Branch on HTTP status, then `error.data.reason`, then `error.code`. Retry only 429s, the 5xx reads, agave's not-yet codes and getTransactionsForAddress's `-32602` `the walk read no history`, waiting `retry-after-ms`.
 6. Never auto-retry a send on 5xx: check `getSignatureStatuses`, then rebroadcast the same bytes until the blockhash expires.
 7. getSignaturesForAddress reaches back up to 30 days; getTransaction and getBlock end at the ledger floor. Read `getFirstAvailableBlock` instead of assuming older transactions exist.
+
+## DAS: getAsset, getAssets, getAssetBatch, getAssetsByOwner, getAssetsByGroup, getAssetsByCreator, getAssetsByAuthority, searchAssets, getNftEditions, getTokenAccounts
+
+The ten Digital Asset Standard methods are JSON-RPC calls on the RPC endpoint, `POST https://services.carbium.sh`, with the same key. Answers come from our own index of the chain's finalized state, in the field names and answer shapes of the Helius DAS API, so a DAS client switches by its URL alone: `https://services.carbium.sh/?api-key=<KEY>`, or the key in the `x-api-key` header.
+
+### Rules
+
+1. Send the Helius field names. `options` and `displayOptions` are the same. A display flag at the top level of `params` is an unknown field. `getAsset` also takes `params: ["<id>"]`. An unknown field gets `-32602` `unknown field ..., expected one of ...`. With the Metaplex Umi DAS plugin (2.1.1), set `dasApi({ heliusCompatibility: true })`. Without it, the plugin's `getNftEditions` and `getTokenAccounts` send `mintAddress` and `ownerAddress`, and those calls are refused.
+2. Page deep lists by cursor. Leave `page` out and pass the last answer's `cursor` until a page holds fewer than `limit` items. `cursor` goes alone. `before` and `after` set id bounds and can go together. None of the three goes with `page`, and without `page` only `sortBy` `id` works.
+3. `limit` goes up to 1,000, the default. `page` starts at 1, and `page` × `limit` stays at or under 500,000. `sortBy` takes `id`, `created`, `updated`, `recent_action` or `none`, with `sortDirection` `asc` or `desc`, and defaults to `id` `desc`. `created` and `none` return id order, as the index holds no creation time. `updated` and `recent_action` sort by the newest slot that wrote the asset.
+4. In a list answer, `total` counts the items on this page. `showGrandTotal` adds `grand_total`, the full count, on the `getAssetsBy*` lists and `searchAssets`, but not on one that includes fungibles; `getTokenAccounts` and `getNftEditions` carry none. `cursor` is the last item's id. It is absent on an empty page, in page mode (the answer carries `page`) and when you paged by `before` or `after`. `last_indexed_slot` is the newest finalized slot the index holds.
+5. `getAssets` and `getAssetBatch` are one call. They take at most 1,000 `ids`, repeats allowed, and return a positional array with `null` where an id is not held. An id that is not a valid address refuses the whole call with `-32602` `Pubkey Validation Err: <v> is invalid`.
+6. Batch DAS calls only with each other. A DAS batch answers HTTP 200 with an array in request order, each element with its own `id` and its own result or error. A batch takes all its cells at once, one per call plus one for each 4 KB of body past the first, so a full batch of 100 calls fits the 150-cell burst. It holds one place in flight, and its calls run one after another under one 5 s limit. A call still waiting at the limit comes back as `-32011` `das upstream timed out`, uncharged: send it again. A batch that mixes DAS with any other served method gets 400 `-32602` `this method is not batchable`, and a batch that holds an unknown name, a proof or signature method included, gets one 200 `-32601` `method not found` for the whole batch.
+7. `getAssetsByGroup` does not read `groupKey`: `groupValue` names a collection whatever the key says. The same holds for a `searchAssets` `grouping` in any of its forms: `["collection", v]`, `{"collection": v}` or `{"group_key": k, "group_value": v}`.
+8. `searchAssets` serves `ownerAddress`, `creatorAddress` with `creatorVerified`, `authorityAddress`, `grouping`, `interface`, `tokenType`, `frozen`, `delegate` and `burnt`. `tokenType` needs `ownerAddress` beside it and goes with neither `interface` nor `compressed`. `delegate` needs `ownerAddress` or `grouping`. Every other filter is refused by name with `-32602` ``this index does not serve the `<name>` filter``: `negate` (other than `false`), `conditionType` (other than `"all"`), `ownerType`, `supply`, `supplyMint`, `compressible`, `royaltyTargetType`, `royaltyTarget`, `royaltyAmount`, `jsonUri`, `not`, `name`, `collections`, `createdAt`, `collectionNft`, `isAgent`, `agentToken` and `assetSigner`. Apply those on your side.
+9. A `searchAssets` with no `ownerAddress`, `authorityAddress`, `creatorAddress` or `grouping` reaches its first 10,000 items by `page`; go on by `cursor`. It also refuses `showGrandTotal`, `sortBy` `updated` or `recent_action`, `burnt: true` and `interface` `MplCoreGroup`. Name one of the four to use them.
+10. `showNativeBalance` on `getAssetsByOwner`, and on `searchAssets` with `ownerAddress`, adds `nativeBalance: {"lamports": <balance>}`, with no `price_per_sol` or `total_price`. When the balance read takes more than 1 s, or a batch's 5 s limit runs out first, the answer comes without it. `showFungible` (getAssetsByOwner only; on searchAssets use `tokenType`), `showZeroBalance`, `showCollectionMetadata` and `showGrandTotal` change the answer, and `showUnverifiedCollections` adds `verified: true` to each grouping. `showRawData`, `requireFullIndex`, `showSystemMetadata`, `showClosedAccounts` and `showInscription` are accepted and change nothing.
+11. `getTokenAccounts` takes `owner`, `mint` or both, sorts by account address, and its `cursor` is the last account's address. With `mint` alone it lists any number of holders by `cursor`, and `page` reaches the first 10,000. An owner with more than 10,000 token accounts is refused with `-32012`, and so is a fungible list of that owner (`showFungible`, or `searchAssets` `tokenType` `all` or `fungible`). Name both an owner and a mint instead.
+12. `getNftEditions` takes `mint`, `limit` and `page` only, and sorts by edition number. A `cursor` is refused as an unknown field, so page by `page`. `max_supply` is `null` when the supply is unlimited.
+
+### Limits
+
+Each DAS call costs 1 credit and 1 cell, plus 1 cell for each 4 KB of body past the first, at 3 / 15 / 75 / 150 req/s (FREE / DEV / BUSINESS / PRO), counted per account, so all of an account's keys share one bucket, with a 150-cell burst on every plan. Each key holds 1 / 2 / 4 / 8 DAS calls in flight (FREE / DEV / BUSINESS / PRO), and a batch holds one place. A call over the rate waits for its turn when that comes within 1 s, and a call with no place in flight waits up to 3 s. One still not admitted gets 429.
+
+| Size or time | Limit |
+|---|---|
+| Request body | 50 KB |
+| Batch | 100 calls |
+| `limit` | 1,000, also the default |
+| `ids` on getAssets and getAssetBatch | 1,000 |
+| `page` × `limit` | 500,000; 10,000 on a searchAssets with no owner, creator, authority or grouping, and on getTokenAccounts by mint |
+| Token accounts per owner | 10,000 |
+| Answer | 8 MiB per call, or per whole batch |
+| Time | 5 s per call, and one 5 s limit for a whole batch |
+
+### Billing
+
+Each served call costs 1 credit, and each served element of a batch costs 1, so a batch of three costs 3. These cost nothing: an error answer, a batch element that fails, times out or goes over the answer cap, a call refused before it runs (key, rate, credits, size) and the `nativeBalance` read. Every admitted call spends its rate cell, one that ends in an error included.
+
+### Coverage
+
+The index holds:
+- Token Metadata NFTs (`V1_NFT`), programmable NFTs (`ProgrammableNFT`), fungibles (`FungibleToken`, `FungibleAsset`), Core assets, collections and groups (`MplCoreAsset`, `MplCoreCollection`, `MplCoreGroup`), and mints with no metadata account (`Custom`), on SPL Token and Token-2022, the Token-2022 metadata extension included. Mint extensions appear in `mint_extensions`.
+- For Core: plugins, external plugins, `mpl_core_info` (`num_minted`, `current_size`), parent groups and `asset_signer`.
+- Editions. A master reports its print supply and maximum, and a print its `edition_number` and `master_edition_mint`.
+- Burnt assets. `getAsset` answers a burnt asset that has a metadata account with `burnt: true`, and a burnt mint with none answers not found. The `getAssetsBy*` lists leave burnt assets out, except burnt Core assets. `searchAssets` lists them unless `burnt` picks one side, except a token NFT burnt before the index began with no holder seen, which it never lists.
+- Mints with no metadata account. `getAsset` answers one with an empty `content`, as `Custom`, or as `FungibleToken` or `FungibleAsset` for a fungible mint. It appears in lists only among an owner's held fungibles. It shows the supply, decimals and extensions on chain. `getAsset` answers its `ownership.owner` as `""`, and an owner's held-fungibles list shows that owner and the state of their account.
+
+The index does not hold:
+- Compressed NFTs. They are absent from every answer. `compressed: true`, `tree` (with `ownerAddress` or `grouping`) and `tokenType` `compressedNft` (with `ownerAddress`) answer an empty page. The proof and signature methods (`getAssetProof`, `getAssetProofBatch`, `getAssetProofs`, `getAssetSignatures`, `getSignaturesForAsset`) answer `-32601`.
+- The off-chain JSON document. `content.json_uri` is its address only and is never fetched, so `content.files` is `[]`, `content.links` is `{}`, and `content.category` and the off-chain keys are absent. Fetch the document yourself when you need it.
+- Prices. `token_info` carries no `price_info`.
+- These fixed fields: `uses` is `null`, `royalty.target` is `null`, `royalty.locked` is `false`, and `compression` reads as uncompressed. A collection grouping appears only when the collection is verified. Plain list items leave out `mint_authority` and `freeze_authority`, which `getAsset` carries.
+- On `searchAssets`, `interface` `V1_PRINT` or `LEGACY_NFT` matches nothing.
+
+### Errors
+
+Errors from the index come with HTTP 200 and their own code. A call refused before it runs comes with its own HTTP status. Decide by the code: the message can carry your own values, and an index error that arrives with no message reads `das upstream refused the request` under the same code.
+
+| HTTP | Code | Message | What to do |
+|---|---|---|---|
+| 200 | `-32000` | `Database Error: RecordNotFound Error: Asset Not Found` | The index holds no such asset (getAsset) or no such master edition (getNftEditions). Do not retry at once. |
+| 401, 403 | `-32001` | the key messages | Fix the key, its scope or the calling address. Do not retry. |
+| 402 | `-32002` | `credits exhausted` | Buy a plan or upgrade. Do not retry. |
+| 429 | `-32005` | `rate limit exceeded` (`RATE_LIMITED`) | Wait `retry-after-ms`, then retry. Lower your rate if it repeats. |
+| 429 | `-32005` | `DAS lane capacity exceeded: das_lane` (`SLOT_CAP_EXCEEDED`) | Too many calls in flight. Wait `retry-after-ms`, retry, and send fewer at once. |
+| 502 | `-32011` | `das upstream unreachable`, `das upstream error`, `das upstream read failed` | Retry with backoff. |
+| 502 | `-32011` | `das upstream response too large` | The answer is over 8 MiB. Ask for a smaller `limit` or fewer `ids`, or split the batch. Do not resend it unchanged. |
+| 503 | `-32011` | `compat verbs not initialised` | Retry with backoff a few times, then stop. |
+| 504, or 200 inside a batch | `-32011` | `das upstream timed out` | No answer within 5 s. Retry. For a list, ask for a smaller `limit`. In a batch, send that element again. |
+| 200 | `-32012` | `token accounts refused: the subject holds more than the hot store's 10000-account cap; name an owner and a mint` | Name both an owner and a mint. Do not retry. |
+| 200 | `-32012` | `showFungible refused: the owner holds more than the hot store's 10000 token accounts; list without it` | On getAssetsByOwner, list without `showFungible`. On searchAssets, ask for `tokenType` `nonFungible`. |
+| 200 | `-32021` | `index is behind the chain, retry` | The index trails the chain by more than 32 slots. Retry with backoff. |
+| 200 | `-32022` | `index is repairing a gap, retry later` | Retry later with long waits. Do not loop. |
+| 200 | `-32023` | `index is not built yet` | Retry later. |
+| 200 | `-32024` | `token accounts refused: the hot store deferred the read; retry` | Retry with backoff. |
+| 200 | `-32026` | `index is busy, retry`, `hot store is busy, retry` | Retry with jittered backoff. |
+| 413 | `-32600` | `request body exceeds the byte cap` | The body is over 50 KB. Split it. |
+| 400 | `-32600` | `batch exceeds the cardinality cap` | The batch has more than 100 calls. Split it. |
+| 400 | `-32600` | `malformed json-rpc body`, `duplicate method key`, `params before method`, `method beyond position cap` | Fix the body. Put `"method"` before `"params"`, within the first 1 KB. |
+| 200 | `-32601` | `method not found` | The method name is unknown, the proof and signature methods included. Do not retry. |
+| 400 | `-32602` | `this method is not batchable` | Batch DAS calls only with DAS calls. |
+| 200 | `-32602` | `missing field ...`, `unknown field ..., expected one of ...`, `invalid type: ...`, `invalid value: ...`, `unknown variant ...`, `Pubkey Validation Err: <v> is invalid`, `Validation Error: Invalid pubkey <v>`, `Cursor Validation Err: <v> is invalid`, `invalid params: ...`, `Validation Error: Must provide either 'owner' or 'mint'`, `Validation Error: Must provide 'mint'` | Fix the params. Do not retry. |
+| 200 | `-32602` | `Pagination Error. Limit should not be greater than 1000.`, `Pagination Error. Only one pagination parameter supported per query.`, `Pagination Error. No Pagination Method Selected.` (`page: 0`), `Pagination Sorting Error. Only sorting based on id is supported for this pagination option.`, `Batch Size Error. Batch size should not be greater than 1000.`, `Paginating beyond 500000 items is not supported. ...`, `Paginating beyond 10000 items of a search with no ... is not supported. ...`, `Paginating beyond 10000 token accounts of a mint is not supported. ...` | Fix the paging. Past a window, go on by `cursor`. |
+| 200 | `-32602` | ``this index does not serve the `<name>` filter``, ``this index serves the `delegate` filter only with `ownerAddress` or `grouping` ``, ``this index serves <what> on searchAssets only with `ownerAddress`, `authorityAddress`, `creatorAddress` or `grouping` ``, and the `token_type` and `tree` validation errors | Drop the filter and apply it on your side, or name an owner, creator, authority or grouping. |
+| 200 | `-32603` | `the index could not finish this read in time` | Narrow the request with a smaller `limit` or a named owner, creator, authority or grouping, then send it. |
+| 200 | `-32603` | `Internal error`, `das upstream refused the request` | Retry with backoff a few times, then stop. |
+| 200 | `-32700` | `Parse error` | Send valid JSON-RPC 2.0: an object or array, `"jsonrpc": "2.0"`, an `id`, and params as an object or array. |
+
+### Quick start
+
+```bash
+URL="https://services.carbium.sh"   # CARBIUM_KEY holds the full raw key
+# one asset
+curl -s "$URL" -H 'content-type: application/json' -H "x-api-key: $CARBIUM_KEY" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"getAsset","params":{"id":"<ASSET_ID>"}}'
+
+# a wallet's assets, page by page
+curl -s "$URL" -H 'content-type: application/json' -H "x-api-key: $CARBIUM_KEY" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"getAssetsByOwner","params":{"ownerAddress":"<OWNER>","limit":1000}}'
+# next page: the same body plus "cursor":"<result.cursor>"; stop at a page of fewer than 1000 items
+
+# a search anchored on an owner
+curl -s "$URL" -H 'content-type: application/json' -H "x-api-key: $CARBIUM_KEY" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"searchAssets","params":{"ownerAddress":"<OWNER>","tokenType":"nonFungible","limit":100}}'
+
+# every holder of a token, page by page
+curl -s "$URL" -H 'content-type: application/json' -H "x-api-key: $CARBIUM_KEY" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"getTokenAccounts","params":{"mint":"<MINT>","limit":1000}}'
+# next page: the same body plus "cursor":"<result.cursor>"
+
+# a DAS batch of two: HTTP 200, an array in request order
+curl -s "$URL" -H 'content-type: application/json' -H "x-api-key: $CARBIUM_KEY" \
+  -d '[{"jsonrpc":"2.0","id":1,"method":"getAsset","params":{"id":"<ASSET_ID>"}},
+       {"jsonrpc":"2.0","id":2,"method":"getAssetsByGroup","params":{"groupKey":"collection","groupValue":"<COLLECTION>","limit":10}}]'
+```
+
+### A client with retries (Node 18+, global fetch)
+
+```js
+// carbium-das.mjs
+const URL = "https://services.carbium.sh";
+const KEY = process.env.CARBIUM_KEY; // full raw key
+
+// Codes that waiting can fix. -32022 and -32023 need a later run: do not loop on them. Every other code is final, and so are
+// two messages that ask for a smaller request.
+const RETRY = new Set([-32005, -32011, -32021, -32024, -32026, -32603]);
+const LATER = new Set([-32022, -32023]);
+const NARROW = new Set(["das upstream response too large", "the index could not finish this read in time"]);
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+export class DasError extends Error {
+  constructor(status, e) {
+    super(`HTTP ${status} ${e?.code} ${e?.message}`);
+    Object.assign(this, { status, code: e?.code, later: LATER.has(e?.code) });
+  }
+}
+
+export async function das(method, params, { maxAttempts = 4 } = {}) {
+  const body = JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }); // method before params
+  for (let attempt = 1; ; attempt++) {
+    const res = await fetch(URL, { method: "POST", headers: { "content-type": "application/json", "x-api-key": KEY }, body });
+    const j = await res.json().catch(() => ({ error: { code: -32700, message: `HTTP ${res.status}, non-JSON body` } }));
+    if (!j.error) return j.result;
+    const e = j.error;
+    const retry = RETRY.has(e.code) && !NARROW.has(e.message);
+    if (!retry || attempt >= maxAttempts) throw new DasError(res.status, e);
+    const hint = Number(res.headers.get("retry-after-ms")) || Number(res.headers.get("retry-after")) * 1000 || 0;
+    await sleep(Math.max(hint, Math.min(250 * 2 ** (attempt - 1), 4000)) + Math.random() * 250);
+  }
+}
+
+// Every item of a list, by cursor. getTokenAccounts answers token_accounts; the other lists answer items.
+export async function* walk(method, params, limit = 1000) {
+  let cursor;
+  for (;;) {
+    const r = await das(method, { ...params, limit, ...(cursor && { cursor }) });
+    const rows = r.items ?? r.token_accounts;
+    yield* rows;
+    if (rows.length < limit || !r.cursor) return;
+    cursor = r.cursor;
+  }
+}
+
+// examples
+const asset = await das("getAsset", { id: "<ASSET_ID>" });
+for await (const a of walk("getAssetsByOwner", { ownerAddress: "<OWNER>" })) console.log(a.id, a.interface);
+let holders = 0;
+for await (const t of walk("getTokenAccounts", { mint: "<MINT>" })) if (t.amount > 0) holders++;
+```
+
+### How we test it
+
+1. Pick real subjects of every kind the index holds: Token Metadata NFTs, programmable NFTs, master and print editions, Core assets and collections, Token-2022 mints with extensions, and fungibles. Add wallets, creators, authorities and collections to list. Our two sets hold 1,251 requests across the ten methods, naming 1,000 assets, and 167 collection requests, with paging, display options and bad inputs.
+2. Send every request to the reference DAS API once, one call at a time, and keep the answers.
+3. Send the same bodies to `https://services.carbium.sh`, one call at a time. Compare every field exactly by its JSON path, leaving out `last_indexed_slot` and `price_info` on both sides. Compare lists as the set of ids (`address` for token accounts, `mint` for editions) and their order. Compare errors by code, and by message with your own values cut out.
+4. Set aside the fields of the off-chain document behind `json_uri`, since the index does not fetch it. For any other difference, read the account on chain at `finalized` to see which answer the chain holds.
+5. Walk whole collections with `getAssetsByGroup` (`limit` 1000, `sortBy` id ascending) on both sides. Then ask for each collection's hashlist by id through `getAssetBatch`, 1,000 ids at a time, and compare the id sets. An id only the reference returns should be one it marks `burnt: true`.
+6. Walk every holder of a token with `getTokenAccounts` by `mint` and `cursor`, on both sides. Read any account found on one side only with `getMultipleAccounts` at `finalized`. It should be closed or empty.
+7. Send the exact bodies the Metaplex Umi DAS plugin 2.1.1 and the Helius SDK 3.5.0 send, the request bodies from the reference docs, 21 bad inputs and a batch. Compare HTTP status, error code and message, answer shape and row count.
+8. Compare `last_indexed_slot` with `getSlot` at `finalized`, many times over, to see how far the index trails the chain.
+
+Results, measured 2026-11-21:
+- 10,382 of 10,386 compared assets (99.96%) equal on every on-chain field.
+- Every live asset found and none extra across three Core collections walked whole (5,561, 2,222 and 374 assets) and a 6,202-asset hashlist asked by id.
+- Every holder with a balance returned once, for a token with more than 11,500 token accounts.
+- The same status, code, message and answer shape on every request form of the ten methods, with `nativeBalance` in lamports.
+- The index within 16 slots of the finalized chain on 99.99% of 101,252 readings over six hours.
+
+### Common mistakes
+
+- Paging deep with `page`. Past 500,000 items it is refused, and past 10,000 on an unanchored searchAssets or on a mint's token accounts. Walk by `cursor`.
+- Reading `total` as the full count. It counts this page only. Ask for `showGrandTotal`.
+- Expecting images, attributes, `content.files` or `content.links` from the off-chain JSON. Fetch `content.json_uri` yourself.
+- Sorting by `created` and expecting creation order. It returns id order.
+- Mixing DAS and other RPC methods in one batch.
+- Using the Umi DAS plugin without `heliusCompatibility: true`.
+- Retrying a `-32602`, or looping on `-32022`.
+- Sending more calls at once than the plan's in-flight cap allows. Queue them per key.
+
+### Agent checklist
+
+- Call `https://services.carbium.sh` with the full key in `x-api-key` or `?api-key=`.
+- Send the Helius field names, and put `"method"` before `"params"`.
+- Walk lists by `cursor` with `limit` 1000 until a page comes back short.
+- Keep calls in flight per key within your plan; a batch counts as one. Batch DAS calls only with each other, up to 100 a batch.
+- Retry `-32005`, `-32011`, `-32021`, `-32024`, `-32026` and `-32603` with jittered backoff, and honour `retry-after-ms`; narrow the request instead on `response too large` and `could not finish this read in time`. Retry `-32022` and `-32023` later. Stop on every other code.
+- Apply unserved `searchAssets` filters on your side. Name an owner, creator, authority or grouping before you use `showGrandTotal`, `burnt: true`, `interface` `MplCoreGroup` or the `updated` and `recent_action` sorts.
+- Fetch off-chain JSON yourself, and expect no prices and no compressed NFTs.
+- Budget 1 credit per served call.
 
 ## WebSocket (JSON-RPC 2.0 subscriptions over WSS)
 
@@ -1343,7 +1345,7 @@ The stream serves one shared upstream feed. A filter can only return what that f
   - the six sysvars: `SysvarC1ock…`, `SysvarEpochSchedu1e…`, `SysvarRent…`, `SysvarS1otHashes…`, `SysvarS1otHistory…`, `SysvarStakeHistory…`
   - accounts of these indexed programs: `ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL`, `AddressLookupTab1e1111111111111111111111111`, `MNFSTqtC93rEfYHB6hF82sKdZpUDFWkViLByLd1k1Ms`, `SPoo1Ku8WFXoNDMHPsrGSTSG1Y47rzgn41SLUNakuHy`, `SP12tWFxD9oJsVWNavTTBZvMbA6gkAmxtVgxdqvyvhY`, `SPMBzsVUuoHA4Jm6KunbsotaahvVikZs1JyTW6iJvbn`, `ALPHAQmeA7bjrVuccPsYPiCvsi428SNwte66Srvs4pHA`, `REALQqNEomY6cQGZJUGwywTBD2UmDT32rZcNnfxQ5N2`, `5ocnV1qiCgaQR8Jb8xWnVbApfaygJ8tNoZfgPwsgx9kx`, `5quBtoiQqxF9Jv6KYKctB59NT3gtJD2Y65kdnB1Uev3h`, `9H6tua7jkLhdm3w8BvgpTn5LZNU7g4ZynDmCiNN3q6Rp`, `9W959DqEETiGZocYWCQPaJ6sBmUzgfxXfqGeTEdp3aQP`, `DjVE6JNiYqPL2QXyCUUh8rNjHrbz9hXHNYt99MQ59qw1`, `HpNfyc2Saw7RKkQd8nEL4khUcuPhQ7WwY1B2qjx8jxFq`, `goonuddtQRrWqqn5nFyczVKaie28f3kDkHWkHtURSLE`, `pfeeUxB6jkeY1Hxd7CsFCAjcbHA9rWtchMGdZ6VojVZ`
 - **System-owned wallets (SOL balances), Stake and Vote accounts do not stream as account updates**, except System accounts closing to 0 lamports and accounts holding more than 1,000,000 SOL. They are admitted, then stay silent. A stream that delivers no data frame books 0 credits. In a live test, 8 busy Jito tip accounts gave 0 account frames in 15 s, while a `transactions` filter on the same accounts gave 740 frames in 6 s. To follow a wallet, subscribe `transactions` with `accountInclude: [wallet]` and read `meta.preBalances`/`postBalances`, or poll `getBalance` over RPC.
-- **No startup snapshot.** An account stream sends only writes made after it opens. Load the current state with RPC `getMultipleAccounts` (up to 100 keys per call on DEV and BUSINESS, 300 on PRO; see Point reads in the RPC section) first. Then apply stream updates, keeping the highest `(slot, writeVersion)` per pubkey.
+- **No startup snapshot.** An account stream sends only writes made after it opens. Load the current state with RPC `getMultipleAccounts` (up to 100 keys per call on DEV and BUSINESS, 300 on PRO; see Point reads in the [RPC section](https://carbium.sh/skill/rpc.md)) first. Then apply stream updates, keeping the highest `(slot, writeVersion)` per pubkey.
 - **Blocks are program-scoped.** A `blocks` frame carries only the transactions that touch these programs: `675kPX9M…`, `CAMMCzo5…`, `CPMMoo8L…`, `whirLbMi…`, `LBUZKhRx…`, `Eo7WjKq6…`, `cpamdpZC…`, `pAMMBay6…`, `PhoeNiXZ…`. `executedTransactionCount` still states the full block count. For full blocks, use RPC `getBlock` with `maxSupportedTransactionVersion: 1`.
 
 ### Fields that are refused
@@ -1465,7 +1467,7 @@ Same endpoint and metadata, 1 credit per call, at 5 / 30 / 100 / 500 req/s (FREE
 - `update.account.account`: `{ pubkey, lamports, owner, executable, rentEpoch, data, writeVersion, txnSignature }`, plus `update.account.slot`.
 - `update.transaction.transaction`: `{ signature, isVote, transaction, meta, index }`. `meta.err` is set on failed transactions. Every transaction version is carried, and the stream has no `maxSupportedTransactionVersion` parameter.
 
-### Robust client (Node 18+, `@triton-one/yellowstone-grpc` v8)
+### Robust client (Node 20.18+, `@triton-one/yellowstone-grpc` v8)
 
 ```js
 // npm i @triton-one/yellowstone-grpc@8 @solana/kit
@@ -1580,7 +1582,7 @@ grpcurl -import-path ./proto -proto geyser.proto \
 
 ## Webhooks (a signed HTTPS POST per finalized transaction)
 
-Register an HTTPS address and a list of Solana addresses; each finalized transaction that touches one of them arrives there as a signed `POST`, with no socket or stream to hold open. You manage webhooks on the dashboard's own API at `https://carbium.sh` with the dashboard session (`Authorization: Bearer <session token>`, as under Account, keys and billing) or an account API key (Account API keys), never a service key. Send each JSON body with `Content-Type: application/json`.
+Register an HTTPS address and a list of Solana addresses; each finalized transaction that touches one of them arrives there as a signed `POST`, with no socket or stream to hold open. You manage webhooks on the dashboard's own API at `https://carbium.sh` with the dashboard session (`Authorization: Bearer <session token>`, as under [Account, keys and billing](https://carbium.sh/skill/account.md)) or an account API key ([Account API keys](https://carbium.sh/skill/account.md)), never a service key. Send each JSON body with `Content-Type: application/json`.
 
 ### Rules an agent must follow
 
@@ -1721,11 +1723,11 @@ A `paused` webhook with a reason comes back by itself once the cause is lifted.
 
 ## Quote and swap (`quote`, `swap`, `prices`, `health`)
 
-The quote plane uses JSON-RPC 2.0 over HTTPS at `POST https://services.carbium.sh`, on the same endpoint and with the same key carriers as RPC. It has four verbs: `quote`, `swap`, `prices` and `health`. `POST /quote` is not an endpoint, so put the method name in the JSON body. The one REST path is `GET /cq1/quote`, a quote by query string under the same key, plan and rate (the docs list its parameters).
+The quote plane uses JSON-RPC 2.0 over HTTPS at `POST https://services.carbium.sh`, on the same endpoint and with the same key carriers as RPC. It has four verbs: `quote`, `swap`, `prices` and `health`. `POST /quote` is not an endpoint, so put the method name in the JSON body. Use `quote` and `swap` for every quote and swap. `GET /cq1/quote` is the old quote path by query string, kept only for callers already on it: move to `quote` (see Moving off `GET /cq1/quote`).
 
 Rules an agent must follow:
 - Send one quote-plane call per HTTP request. A batch that contains `quote`, `swap` or `prices` is refused whole with HTTP 400 `-32600 "quote is not batchable"`, and each element of the batch gets that error. A batch that contains `health` is refused with HTTP 400 `-32602 "quote is not batchable"` and `id: null`.
-- Params are snake_case, except `txVersion` and `swapTag`. You can send them positionally (`"params":[{...}]`) or by name (`"params":{...}`). Results are camelCase.
+- Params are snake_case, except `txVersion`, `swapTag` and `maxAccounts`. You can send them positionally (`"params":[{...}]`) or by name (`"params":{...}`). Results are camelCase.
 - Every amount is a decimal string in base units (atoms or lamports). Parse amounts with `BigInt`, never `Number`.
 - Do not treat HTTP 200 as success: several answers about the pair itself (no route, no live pool, an input larger than the pool can pay, some swap refusals) come back as HTTP 200 with an `error`. Read `error.code` and the HTTP status together: `-32093` means quote again at HTTP 200 and retry with backoff at HTTP 503.
 - An unknown parameter name is refused and never ignored silently. The one exception is `fft`, in any letter case, which is accepted and dropped by both `quote` and `swap`.
@@ -1741,6 +1743,9 @@ Rules an agent must follow:
 | `dex` (optional; `dexes` is an alias) | a label string, or an array of 1 to 17 labels | Restricts the quote to these venue families, one hop from `src_mint` to `dst_mint` (it may split across their pools); a pair with no such route answers `-32051` with why `no_route_in_pinned_dex`, never another venue's route. Each label is at most 32 characters from `[A-Za-z0-9._-]` and matches case-insensitively. Send `dex` or `dexes`, never both. Omit it to search every family, multi-hop and split. |
 | `txVersion` (optional) | number, 0 or 1 | 0 (default): a v0 transaction with address lookup tables, at most 1,232 B. 1: a v1 transaction with every address inline (no lookup tables), at most 4,096 B, for routes v0 cannot fit. v1 lifts the byte limit, not the 64-account limit: a route that needs more than 64 accounts is refused in both versions. The swap built from the quote is the version the quote names. v1 is built for every family; it has not yet been landed on `r-cpmm`, `m-dbc` or `m-dbc-hook` routes. Any other value is refused: `-32602` `txVersion must be 0 or 1`. |
 | `swapTag` (optional) | number, 0 or 1 | 0 (default): the router picks the form of the swap instruction. 1: the plain form: its data starts with tag `0x01` and has no middle block, and each middle token account is created by its own idempotent instruction, paid and owned by your wallet and left open. Route, price, fee and floor are the same. v0 only: with `txVersion: 1` the quote is refused `-32602` `the quote upstream refused the request` with `error.data.code` `swap_tag_format`. The swap built from the quote is the tagged one, and the quote and the swap both answer `swapTag: 1`. Any other value is refused: `-32602` `swapTag must be 0 or 1`. |
+| `maxAccounts` (optional) | number, 1 to 64 | The most accounts the swap instruction may carry, repeats counted. Omitted, there is no cap, except 64 under `swapTag: 1`. When no route fits the cap, the quote answers HTTP 200 `-32055` `no route fits the account cap`. Out of range, it is refused `-32602` `the quote upstream refused the request` with `error.data.code` `bad_max_accounts`; any value that is not a whole number is refused `-32602` `maxAccounts must be a whole number`. |
+| `integrator_fee_bps` (optional; `fee_bps` is an alias) | whole number 0 to 5000, as a JSON number or a decimal string | Your own fee on the swap, in basis points: 50 is 0.5%. 0 means no fee. Send it with `integrator_fee_account`, or send neither. Above 0, not with `swapTag: 1`. |
+| `integrator_fee_account` (optional; `treasury` is an alias) | base58, 32 bytes | The wallet that receives your fee: a wallet address, not a token account. |
 
 Wrapped SOL is `So11111111111111111111111111111111111111112`. Use it for SOL at either end.
 
@@ -1775,14 +1780,15 @@ Bonding-curve pools: `quote` serves a token on its curve and, after it migrates,
 | Field | Type | Meaning |
 |---|---|---|
 | `srcAmountIn` | string | The input amount, gross: what the wallet is debited. On a partial fill it is the part that fills. |
-| `destAmountOut` | string | The amount received, net of `platformFee` and of any Token-2022 transfer fee on the route's mints. Do not subtract that fee again. |
-| `minAmountOut` | string | The floor `swap` lays, exactly, rounded down. When the fee comes off the input (SOL in, SOL to USDC or USDT included, or a route with no SOL end whose destination is not USDC or USDT) it is `floor(destAmountOut × (10000 − slippageBps) / 10000)`. When the fee comes off the output (SOL out, or USDC or USDT out with no SOL in) the slippage is taken on the gross output (`destAmountOut + platformFee.amount`), `G = floor(gross × (10000 − slippageBps) / 10000)`, then the fee, `G − floor(G × feeBps / 10000)`. |
+| `destAmountOut` | string | The amount received, net of `platformFee`, of `integratorFee` when you asked one, and of any Token-2022 transfer fee on the route's mints. Do not subtract them again. |
+| `minAmountOut` | string | The floor `swap` lays, exactly, rounded down. When the fee comes off the input (SOL in, SOL to USDC or USDT included, or a route with no SOL end whose destination is not USDC or USDT) it is `floor(destAmountOut × (10000 − slippageBps) / 10000)`. When the fee comes off the output (SOL out, or USDC or USDT out with no SOL in) the slippage is taken on the gross output (`destAmountOut + platformFee.amount`), `G = floor(gross × (10000 − slippageBps) / 10000)`, then the fee, `G − floor(G × feeBps / 10000)`. With an `integratorFee` both fees come off `G` together: `floor(G × (10000 − feeBps − integratorFee.feeBps) / 10000)`, the gross output being `destAmountOut + platformFee.amount + integratorFee.amount`. |
 | `slippageBps` | number | Your slippage. |
 | `swapMode` | string | Always `"BaseIn"` (exact in). |
 | `inputMint`, `outputMint` | base58 | The pair. |
 | `routePlan[]` | array | One entry per leg: `{hop, percent, swapInfo:{ammKey, label, inputMint, outputMint, inAmount, outAmount}}`. `hop` is the depth: 0 is the first stage, 1 spends the output of hop 0, and so on. `percent` is a string giving that leg's share of its hop's input. Legs in the same hop are a split. |
 | `quoteId` | 32 lowercase hex | The handle `swap` takes. It is valid for 30 s, can be evicted sooner under load and is forgotten when the service restarts. You can reuse it within 30 s, for example to rebuild with a different priority price. |
 | `platformFee` | object, present only when a fee is charged | `{amount, feeBps, mint}`: the router fee, already inside `destAmountOut` and `minAmountOut` (see On-chain router fee). |
+| `integratorFee` | object, present only when you asked a fee above 0 | `{amount, feeBps, mint, account}`: your own fee, already inside `destAmountOut` and `minAmountOut` (see Integrator fee). `amount` is a string in base units of `mint`; `account` is the wallet you sent. |
 | `txVersion` | number, present only on a v1 quote | `1` when the quote asked `txVersion: 1`: the swap built from it is v1. Absent on v0. |
 | `swapTag` | number, present only on a tagged quote | `1` when the quote asked `swapTag: 1`: the swap built from it is the plain form. Absent otherwise. |
 | `partial`, `requestedAmountIn` | `true`, string; present only on a partial fill | Only part of your `amount_in` can fill: an input past what its one pool can pay (any venue family; the part is that bound less 3%), or a route with SOL in that cannot fill it whole (why `first_hop_unfilled`; asked again at half the amount, up to 6 times, down to 1/64, and the first part that fills is served). `srcAmountIn` is that part, `requestedAmountIn` is what you asked for, and `swap` builds the part. |
@@ -1813,6 +1819,18 @@ The fee is 0, and the quote carries no `platformFee`, in two cases: when it roun
 
 The fee is paid inside the router instruction of the built transaction, at the quoted bps; there is no separate transfer instruction for it. On SOL out, and on USDC or USDT out with no SOL in, it is a share of the output the route actually delivers, so a fill better than the quote pays slightly more than `platformFee.amount` and a worse one (slippage, or a reroute) slightly less.
 
+### Integrator fee (`integratorFee`)
+
+Send `integrator_fee_bps` with `integrator_fee_account` on `quote`, and the swap built from that quote pays your wallet that share on chain, beside the router fee. `swap` takes nothing new: it carries the fee from the quote.
+
+- Token and side follow the router fee's rule (the table above): SOL when SOL is at either end, else USDC or USDT when that is the output, else the input token. `integratorFee.mint` names it.
+- Amount: `floor(base × integrator_fee_bps / 10000)`, on the router fee's base (`amount_in` off the input, the gross output off the output). The router fee does not change. `integratorFee` is present whenever the bps is above 0, even when `amount` is `"0"`.
+- Off the input, `srcAmountIn` stays gross and the hop-0 `inAmount` values add up to `amount_in` less both fees. Off the output, `destAmountOut` is net of both.
+- A SOL fee is paid to the wallet in lamports. A token fee is paid to the wallet's associated token account for `integratorFee.mint`, which must already exist: nothing in the swap creates it.
+- Skipped, never failed: when that token account is missing or cannot receive, or a SOL fee would leave the wallet below the rent-exempt minimum, the fee is not paid, the swap still lands and the trader keeps the amount. The same holds, for both fees, when the fee is due in an input token that is a Token-2022 mint with a transfer hook program set, frozen by default or non-transferable (the tokens that pay no router fee, above). `integratorFee` shows the amount in every one of these cases.
+- Off the output the fee is a share of the output the route actually delivers, so `integratorFee.amount` is an estimate there and exact off the input, where it is what leaves the trade: a Token-2022 input mint's own transfer fee is held back from what reaches the wallet.
+- The fee wallet is one more account in the swap instruction, on v0 and v1, and counts toward `maxAccounts`.
+
 ### `quote`: errors
 
 | HTTP | code | message (exact) | What to do |
@@ -1822,16 +1840,20 @@ The fee is paid inside the router instruction of the built transaction, at the q
 | 400 | -32602 | `src_mint and dst_mint must differ` | Fix the pair. |
 | 400 | -32602 | `amount_in must be a non-zero u64 in base units` | Send base units, greater than 0 and at most 2^64−1. |
 | 400 | -32602 | `slippage_bps must be 0 to 5000` | Fix the slippage. |
-| 400 | -32602 | `params accepts only src_mint, dst_mint, amount_in, slippage_bps, txVersion, swapTag, and one of dex or dexes` | Remove the extra params (other providers' `onlyDirectRoutes` and similar are refused). |
+| 400 | -32602 | `params accepts only src_mint, dst_mint, amount_in, slippage_bps, txVersion, swapTag, maxAccounts, integrator_fee_bps (or fee_bps) with integrator_fee_account (or treasury), and one of dex or dexes` | Remove the extra params (other providers' `onlyDirectRoutes` and similar are refused). |
 | 400 | -32602 | `dex must be a venue-family label, or an array of them, matching [A-Za-z0-9._-]` | Fix the shape: 1 to 17 labels, each at most 32 characters. |
 | 400 | -32602 | `dex must name venue families: r-amm, r-cpmm, r-clmm, r-lpad, o-whirlpool, o-orca-v1, o-orca-v2, m-dlmm, m-damm, m-damm-v2, m-dbc, m-dbc-hook, pump-amm, pump-curve, pancakeswap-v3, manifest, byreal` | Use a label from the venue table. |
 | 400 | -32602 | `send dex or dexes, not both` | Send one of them. |
+| 400 | -32602 | `send integrator_fee_bps or fee_bps, not both` / `send integrator_fee_account or treasury, not both` | Send one name for each value. |
 | 400 | -32602 | `txVersion must be 0 or 1` | Send 0, 1, or leave it out. |
+| 400 | -32602 | `maxAccounts must be a whole number` | Send 1 to 64, or leave it out. |
+| 400 | -32602 | `integrator_fee_bps (a whole number 0 to 5000) and integrator_fee_account (a base58 32-byte pubkey) go together` | Send both, valid, or neither. |
+| 400 | -32602 | `swapTag 1 carries no integrator fee` | Drop `swapTag` or the fee. |
 | 400 | -32602 | `the quote upstream refused the request` | The engine refused this exact request. `error.data` = `{status, code, why, min_out_atoms?, min_amount_in?}`. For `code:"dust_amount"` the amount is too small: send at least `error.data.min_amount_in`, or a clearly larger amount. Change the request; do not resend it unchanged. |
 | 400 | -32052 | `dex names a venue family the quote upstream does not have` | That family is not loaded right now. Pin another family or leave out `dex`. |
 | 400 | -32600 | `quote is not batchable` | Send one quote per request. |
 | 401 | -32001 | `unknown api key` / `api key is not enabled for quote` / other key states (see Key states) | Fix the key. Do not retry. |
-| 403 | -32050 | `module not enabled for this account` | The account lacks the quote module. Add it with `POST https://carbium.sh/v1/modules/quote`, your session or a Full control account API key, and the JSON body `{"plan": "free"}` (the free plan), or on the dashboard's MODULES page. Do not retry until it is added. |
+| 403 | -32050 | `module not enabled for this account` | The account lacks the quote module. Add it (see the retry table). Do not retry until it is added. |
 | 429 | -32005 | `rate limit exceeded` | Over your rate. A call that fits within 1 s waits and is served instead of getting this. Wait `retry-after-ms` (or `Retry-After`), then retry. |
 | 429 | -32005 | `quote lane capacity exceeded: quote_lane` | More than 8 quote-plane calls were in flight on this key (32 node-wide) and none finished within 3 s. Lower your concurrency, wait `retry-after-ms` (100), then retry. |
 | 429 | -32005 | `free tier limit for your network reached: all free keys calling from one subnet share one request budget; retry after Retry-After, or upgrade for a limit of your own` | Free quote plan only: all free callers on one /24 network (/56 on IPv6) share 20 req/s. Wait `Retry-After`, or buy a quote plan. |
@@ -1840,11 +1862,13 @@ The fee is paid inside the router instruction of the built transaction, at the q
 | 200 | -32051 | `no route` | No path for this pair and size. `error.data` = `{reason, why, direct_why?, message?}`; act on `why` (table below). `message` is the engine's reason in one plain sentence, for logs. |
 | 200 | -32053 | `sell exceeds what the curve can pay` | `error.data` = `{code:"sell_exceeds_real_sol", why?, requested?, max_amount_in?, max_out?, real_sol_reserves?, real_quote_reserves?, quote_mint?}`. An input past what its one pool can pay, any venue family. The engine has already tried the part the pool can pay (`max_amount_in` less 3%), which normally answers ok as a `partial` quote, so this error means that part failed too. `max_out` is the most it pays at `max_amount_in`. If `why` is `partial_below_fee`, that part pays less than the swap costs to land: stop. If `max_amount_in` is 0, nothing pays: stop. With no `why`, that part did not route or the bound moved: quote again well under `max_amount_in`, or stop. |
 | 200 | -32054 | `token has no live pool` | Nothing routes this token (engine `why:"no_live_pool"`). Stop polling it; check again after minutes, not seconds. |
+| 200 | -32055 | `no route fits the account cap` | The cap (`maxAccounts`, or 64 under `swapTag: 1`) left no route (`error.data.why` `accounts_over_cap`). Raise `maxAccounts` (at most 64), lower `amount_in`, or quote without both `maxAccounts` and `swapTag`; even then the pair may have no route. |
 | 503 | -32011 | `quote upstream stale` | A momentary decline (a feed is reloading). `error.data.why` is one of `stale_pool`, `family_head_dead`, `tick_window_moved`, `pool_keys_missing`, `graduating` (a bonding curve has completed and the pool that replaces it is not serving yet), or `direct_why` is one of `stale_stamp`, `row_fresh_dist`, `row_fresh_dead_head`, `feed_gap`, `no_reserve`. Retry after `Retry-After` with backoff. |
 | 503 | -32011 | `quote upstream refused` | The engine declined. `error.data` (when given) = `{status:503, code, why}` with code `builder_cold`, `snapshot_unavailable`, `redis_unavailable`, `overloaded`, `rpc_unavailable` or `snapshot_declined`, or `{reason, why}` with why `dlmm_window_moved` (a Meteora DLMM price window moved): retry with backoff. |
 | 503 | -32011 | `quote upstream cooling down` | The quote breaker is open after 3 consecutive transport faults. Wait `Retry-After` (about 1 s), then retry. |
 | 503 | -32011 | `quote upstream timed out` / `quote upstream unreachable` / `quote upstream error` / `quote upstream response shape` / `quote upstream response too large` / `quote upstream read failed` | The quote is bounded at 2 s. Retry with jittered backoff and honour `Retry-After`. Stop after 4 tries. |
 | 503 | -32011 | `quote upstream not configured` | This endpoint has no quote service behind it. Stop. |
+| 503 | -32057 | `the upstream has the integrator fee switched off` | Retry later, or quote without the fee. |
 
 #### `-32051` `error.data.why`: what an agent can act on
 
@@ -1895,7 +1919,7 @@ The fee is paid inside the router instruction of the built transaction, at the q
 | `routeRerouted` | object, present only after a reroute | `{why, deadPool, quotedOut, reroutedOut, floor}`, the three amounts as strings; see Reroute. |
 | `swapTag` | number, present only on a tagged build | `1` when the quote asked `swapTag: 1`; absent otherwise. A route that has no plain form is refused `-32093` with `error.data.code` `swap_tag_unroutable`: pin `dex`, change the amount, or quote without `swapTag`. |
 
-**Reroute.** If a pool on the quoted route is gone at build time (closed, a pump curve migrated, or its keys or a fee recipient's token account missing), `swap` holds that pool out of every quote for 30 s. If the transaction would be too large, it holds that route shape out for 60 s. Either way it quotes again once, with the same `srcAmountIn`, `dex` or `dexes` selection, `txVersion` and `compute_unit_price_micro_lamports`, and builds the new route only if that quote keeps the same `srcAmountIn`, avoids the held pool or route and pays at least the original `minAmountOut`. The transaction then no longer follows `routePlan` and can deliver less than `destAmountOut`, never less than `minAmountOut`. The answer then carries `routeRerouted`: `why` is the build refusal that set it off (`pool_state_missing`, `pool_keys_missing`, `fee_recipient_ata_missing`, `pcurve_graduated` or `transaction_too_large`), `deadPool` the pool held out (absent when the route was too large), `quotedOut` the quote's `destAmountOut`, `reroutedOut` the new route's expected out, `floor` the floor held (the same as `minAmountOut`). Treat `minAmountOut` as the guarantee and `reroutedOut` as the estimate. If the new quote finds no route, pays less, changes the amount or does not build, `swap` answers the first build's refusal at HTTP 200: `-32081` for `pool_state_missing`, `-32083` for `transaction_too_large`, or `-32093` with `error.data` = `{status: 422, code}` for the other three. Quote again: the held pool or route stays out of new quotes until its hold ends.
+**Reroute.** If a pool on the quoted route is gone at build time (closed, a pump curve migrated, or its keys or a fee recipient's token account missing), `swap` holds that pool out of every quote for 30 s. If the transaction would be too large, or its swap instruction would carry more accounts than the quote's account cap, it holds that route shape out for 60 s. Either way it quotes again once, with the same `srcAmountIn`, `dex` or `dexes` selection, `txVersion`, `swapTag`, `maxAccounts` and `compute_unit_price_micro_lamports`, and builds the new route only if that quote keeps the same `srcAmountIn`, avoids the held pool or route and pays at least the original `minAmountOut`. The transaction then no longer follows `routePlan` and can deliver less than `destAmountOut`, never less than `minAmountOut`. The answer then carries `routeRerouted`: `why` is the build refusal that set it off (`pool_state_missing`, `pool_keys_missing`, `fee_recipient_ata_missing`, `pcurve_graduated`, `transaction_too_large` or `accounts_over_cap`), `deadPool` the pool held out (absent when the route was too large or over the cap), `quotedOut` the quote's `destAmountOut`, `reroutedOut` the new route's expected out, `floor` the floor held (the same as `minAmountOut`). Treat `minAmountOut` as the guarantee and `reroutedOut` as the estimate. If the new quote finds no route, pays less, changes the amount or does not build, `swap` answers the first build's refusal at HTTP 200: `-32081` for `pool_state_missing`, `-32083` for `transaction_too_large`, `-32055` for `accounts_over_cap`, or `-32093` with `error.data` = `{status: 422, code}` for the other three. Quote again: the held pool or route stays out of new quotes until its hold ends.
 
 Live example (2026-10-09, when the default was a fixed 10,000) with the price absent: `{"transaction":"AQAA…(708 b64 chars)","blockhash":"2QpLj7ntb9aAeZLM5ByDz2QJqWJtMCWNtJuq5TC4BSnD","lastValidBlockHeight":433003717,"minAmountOut":"1081632","computeUnitLimit":161000,"priorityFeeLamports":"1610","rentLamports":"1488440","ataCreates":1}`. The decoded transaction (v0) had 3 instructions: ComputeBudget SetComputeUnitLimit, ComputeBudget SetComputeUnitPrice, and the router swap on program `cqXpiki8fwAWY72xtzqPLmstzf3MZ4kjJBhRatZrWMs`. Some builds add an idempotent token-account create, for 4.
 
@@ -1905,7 +1929,7 @@ The wallet needs: the input amount (if the input is SOL), the 5,000-lamport sign
 
 1. Decode `transaction` from base64 as a **VersionedTransaction (v0 or v1, the version the quote asked for)**. For v1 the wire order is the message, then the signatures, so sign it with a v1-capable SDK (web3.js 3.0, kit 8.4). Sign it with the `user_pubkey` keypair only. Do not change the message, the blockhash or the instructions; if you do, the floor and the fee are no longer the quoted ones.
 2. Send it with `sendTransaction`, on the same endpoint or through any other Solana RPC: `[base64, {"encoding":"base64","skipPreflight":true}]`. On this endpoint it costs 20 cells and 20 credits. Without `skipPreflight:true` the call is priced as a preflight send (70 cells) and runs slower.
-3. Confirm by polling `getSignatureStatuses([[sig]])` until `confirmationStatus` is `confirmed` or `finalized`, or until `err` is non-null. Alternatively, subscribe with `signatureSubscribe` over WSS (one notification, then the subscription closes). For full detail, call `getTransaction(sig, {"encoding":"base64","maxSupportedTransactionVersion":1,"commitment":"confirmed"})`. Mainnet carries v1 transactions: with the version option absent or 0 you get `-32015`.
+3. Confirm by polling `getSignatureStatuses([[sig]])` until `confirmationStatus` is `confirmed` or `finalized`, or until `err` is non-null. Alternatively, subscribe with `signatureSubscribe` over WSS (one notification, then the subscription closes). For full detail, call `getTransaction(sig, {"encoding":"base64","maxSupportedTransactionVersion":1,"commitment":"confirmed"})`.
 4. Expiry: while you are not confirmed, read `getBlockHeight({commitment:"confirmed"})`. Once it is above `lastValidBlockHeight`, make one last status check with `searchTransactionHistory:true`. If the transaction still has not landed, it never will. **Quote again**; do not re-sign the old message.
 5. Resending the *same signed bytes* before expiry is safe because it has the same signature and cannot execute twice. Never re-sign a rebuilt transaction while the first one might still land.
 6. On-chain failure `{"InstructionError":[i,{"Custom":6004}]}` is the router's own error: the output was under the slippage floor (the price moved). Quote again, and widen `slippage_bps` only if you mean to. Any other `Custom` code comes from the venue program the route calls: quote again and resend. An insufficient-funds error means you should stop and fund the wallet.
@@ -1924,16 +1948,38 @@ The wallet needs: the input amount (if the input is SOL), the 5,000-lamport sign
 | -32096 | 200 | `swap route has a leg the on-chain router cannot execute` | Quote again, pinning other families. |
 | -32098 | 200 | `swap route's token hook admits only a wallet holding its gate token` | `error.data` = `{code:"hook_token_gate", gate_mint, gate_min, holding, gate_decimals}`. `gate_min` and `holding` are in base units of `gate_mint`. This is final for this wallet: hold at least `gate_min` of `gate_mint`, then quote again. |
 | -32099 | 200 | `swap route has a hook account the builder cannot derive` | Final for this quote. Do not retry it; stop for this token. |
+| -32055 | 200 | `swap route needs more accounts than the quote's account cap` | Already re-routed once under the cap. Quote again with a higher `maxAccounts` (at most 64) or a smaller `amount_in`. |
 | -32093 | 200 or 503 | `swap upstream refused for an unmapped reason` | `error.data` = `{status, code}`. At HTTP 200, quote again. At HTTP 503, retry with backoff. |
 | -32094 | 503 | `swap upstream returned a floor that is not the one sent` | Retry once with backoff. If it repeats, quote again. |
-| -32060 … -32073, -32075 … -32080 | 503 | for example `swap quote carries no floor` (-32063), `swap quote route leg amounts do not sum to amount_in` (-32078), `swap upstream refused the user pubkey` (-32080) | The builder disagrees with its own quote. Quote again. |
-| -32084 … -32092, -32097 | 503 | for example `swap upstream cannot reach its validator RPC` (-32084), `swap upstream cannot reach its pool store` (-32085), `swap upstream build failed` (-32086), `swap upstream has its on-chain router switched off` (-32097) | Retry with backoff and honour `Retry-After`. Quote again if more than 30 s have passed since the quote. |
+| -32056, -32058 … -32073, -32075 … -32080 | 503 | for example `swap quote carries no floor` (-32063), `swap quote route leg amounts do not sum to amount_in` (-32078), `swap upstream refused the user pubkey` (-32080) | The builder disagrees with its own quote. Quote again. |
+| -32057, -32084 … -32092, -32097 | 503 | for example `the upstream has the integrator fee switched off` (-32057), `swap upstream cannot reach its validator RPC` (-32084), `swap upstream cannot reach its pool store` (-32085), `swap upstream build failed` (-32086), `swap upstream has its on-chain router switched off` (-32097) | Retry with backoff and honour `Retry-After`. Quote again if more than 30 s have passed since the quote. |
 | -32011 | 503 | `swap upstream timed out` (5 s bound) / `swap upstream unreachable` / `swap upstream response shape` / `swap upstream status disagrees with its body` / `swap upstream response too large` / `swap upstream read failed` / `swap upstream not configured` | Retry with backoff. Stop after 4 tries. |
 | -32001 / -32050 / -32005 | 401 / 403 / 429 | as for `quote` | as for `quote` |
 
+### Moving off `GET /cq1/quote`
+
+Send the same `src_mint`, `dst_mint`, `amount_in` and `slippage_bps` as `quote` params on `POST https://services.carbium.sh`, then call `swap` with the `quoteId`.
+
+| Old path | Here |
+|---|---|
+| `fee_bps`, `treasury` | The same names on `quote`: aliases of `integrator_fee_bps` and `integrator_fee_account` |
+| `user_account` | `swap`'s `user_pubkey` |
+| `txn` | `swap`'s `transaction` |
+| `destAmountOutMin` | `minAmountOut` |
+| `feeBps` (the router's plus yours) | `platformFee.feeBps` and `integratorFee.feeBps` |
+| `fee_payer` | No counterpart |
+
+The fee is not the old path's. There `fee_bps` went to 9995, a `treasury` alone meant no fee, the fee was always the input token and the swap opened your token account. Here it is 0 to 5000, both values or neither, in the router fee's token and side, and nothing opens the token account: create the wallet's associated token account for each fee token first (see Integrator fee), or that fee is skipped.
+
+```json
+{"jsonrpc":"2.0","id":1,"method":"quote","params":[{"src_mint":"So11111111111111111111111111111111111111112","dst_mint":"EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v","amount_in":"10000000","slippage_bps":50,"fee_bps":20,"treasury":"<YOUR_FEE_WALLET>"}]}
+```
+
+SOL in, so both fees come off the input: the result carries `"integratorFee":{"amount":"20000","feeBps":20,"mint":"So11111111111111111111111111111111111111112","account":"<YOUR_FEE_WALLET>"}` beside `platformFee`. Then `swap` with `{"quote_id":"<quoteId>","user_pubkey":"<YOUR_PUBKEY>"}` builds it with the fee.
+
 ### `prices`
 
-The params are none, `{}`, or `{"mints":[...]}` with at most 64 base58 mints. The result is `{solUsd, builtUnix, priced, stale, noroute, total, rows}`. Each row is `[mint, priceUsd | null, tvlUsd, quoteMint]`. A mint the table does not carry is simply absent from `rows`; that is not an error. The table is periodic, not a per-call price oracle: it is cached for 30 s. Poll it on a timer and never call it once per swap. Each call counts as one quote. Errors:
+The params are none, `{}`, or `{"mints":[...]}` with at most 64 base58 mints. The result is `{solUsd, builtUnix, priced, stale, noroute, total, rows}`. Each row is `[mint, priceUsd | null, tvlUsd, quoteMint]`. A mint the table does not carry is simply absent from `rows`; that is not an error. The table is periodic, not a per-call price oracle: it is cached for 30 s. Poll it on a timer and never call it once per swap. Errors:
 
 | HTTP | code | message | What to do |
 |---|---|---|---|
@@ -1958,82 +2004,8 @@ Each `quote`, `swap` and `prices` call is one quote (60 cells) against the accou
 | ELITE | see `GET /v1/plans` `quote[]` | 500 / s |
 
 - Concurrency: at most **8 quote-plane calls in flight per key** and 32 node-wide. Beyond that a call waits up to 3 s for a slot, then gets 429.
-- Free quote plan: calls also share the free budgets: 20 req/s for all free callers on one /24 network (/56 on IPv6), 1000 req/s for all free traffic on this host, and 8 of the node's quote-lane slots. Past any of them the call gets 429 `-32005` (see `quote`: errors). A paid quote plan has none of these.
+- Free quote plan: the three free budgets in the 429 rows of `quote`: errors also apply; a paid quote plan has none.
 - Quote-plane calls cost **0 credits**; the plan is the meter, so they are answered even when the account's credits are spent. The `sendTransaction`, `getSignatureStatuses` and `getBlockHeight` calls in the swap flow are ordinary RPC and spend credits and RPC rate.
-- A refused call still spends its rate cells, so a retry loop on a 400 burns your quote rate.
-
-## Cross-plane: key states, credits, limits, retry
-
-### Key states (all `-32001`; `error.data.reason` names the state)
-
-| Message (exact) | HTTP (RPC/quote) | WS handshake | gRPC status | reason | What to do |
-|---|---|---|---|---|---|
-| `unknown api key` | 401 | 401 | UNAUTHENTICATED | `UNKNOWN_KEY` | Fix the carrier or send the whole key. A rotated key is unknown. Do not retry. |
-| `api key suspended: the plan term ended; renew on the dashboard` | 401 | 401 | UNAUTHENTICATED | `KEY_SUSPENDED` (+`status_reason:"term_ended"`) | Rare: a key issued after a paid term ended, before the account moved to Free. Renew on the dashboard; once the account is on Free, its keys work at Free limits. |
-| `api key suspended; contact support` | 401 | 401 | UNAUTHENTICATED | `KEY_SUSPENDED` | Stop and contact support. |
-| `api key revoked` | 401 | 401 | UNAUTHENTICATED | `KEY_REVOKED` | The key was revoked or deleted. Stop and issue a new key. |
-| `api key disabled; contact support` | 401 | 401 | UNAUTHENTICATED | `KEY_BANNED` | Stop and contact support. |
-| `api key is not enabled for rpc` / `websocket` / `grpc` / `quote` / `das` | 401 | **403** (websocket) | UNAUTHENTICATED | `SCOPE_RPC_MISSING` / `SCOPE_WS_MISSING` / `SCOPE_GRPC_MISSING` / `SCOPE_QUOTE_MISSING` / `SCOPE_DAS_MISSING` | Add the scope to the key on the dashboard. |
-| `client ip address is not on this api key's allowlist; add it on the dashboard or with PATCH /v1/keys/{id}/allowlist` | **403** | **403** | PERMISSION_DENIED | `IP_NOT_ALLOWED` | Call from an address on the key's IP allowlist, or add this one (up to 16 addresses or CIDRs; an empty list admits any address). |
-| `session expired` | 401 | 401 | UNAUTHENTICATED | `EXPIRED_SESSION` | Dashboard session tokens only: sign in again. |
-| `missing api key` (WS only) | n/a | 401 | n/a | n/a | Attach a carrier. |
-| `streaming is not included in this tier; upgrade the plan` | n/a | n/a | PERMISSION_DENIED | n/a | FREE has no gRPC stream. Upgrade the plan. |
-
-A key that is revoked, rotated, suspended or banned, or whose account is deleted, also ends its open connections within about 2 s: a WebSocket closes with `1008 key_revoked`, `key_suspended` or `key_banned`, and a Carbon stream ends UNAUTHENTICATED with the message above (a rotated key's stream reads `api key revoked`).
-
-Scopes are per key: `rpc`, `ws`, `grpc`, `quote`, `das`. Change them on the dashboard. The 10 DAS methods need `das`, which a new key has unless you leave it out. Quote-plane verbs need only `quote` and are never batched. The account must also hold the quote module, or calls get 403 `-32050 "module not enabled for this account"`.
-
-RPC body shape: `{"jsonrpc":"2.0","id":<your id>,"error":{"code":-32001,"message":"unknown api key","data":{"reason":"UNKNOWN_KEY","retryable":false}}}`. `error.data.retryable` is true exactly for the pressure band (429). Every reply carries `x-request-id`; quote it to support. The WS handshake refusal body is `{"error":{"message":"..."}}`, not JSON-RPC.
-
-### Credits
-
-- `402`, `-32002`, `"credits exhausted"`, reason `CREDITS_EXHAUSTED`, `retryable:false`, `Retry-After: 1`. A 402 means the account's remaining credits cannot cover the call. On WS the handshake does not check credits: a subscribe answers `-32002` inside the socket, and a live socket whose streamed bytes cannot be paid closes with **1008 `credits_exhausted`**. On gRPC it is `RESOURCE_EXHAUSTED` `credits exhausted` (`consumer_credits_exhausted` on an open stream): do not retry. On RPC and WS do not retry either (after a 1008 close, reconnect once after about 5 s): buy a plan or upgrade on the dashboard (each month of an RPC plan adds its credits; a Quote plan adds none). Near the end of a balance a node can answer 402 while the last credits sit reserved at other nodes; they return within minutes.
-- `429`, `-32005`, `"credits for this account are still loading on this node; retry after Retry-After"`, reason `CREDITS_PENDING`, `retryable:true`, `Retry-After: 1`, `retry-after-ms: 1000`. The account has credits, but this node has not loaded them yet (a new account's first calls, a burst that spent this node's share, or just after a node restart). It is not a 402: wait and send it again. On WS it is a subscribe reply `-32005` with `data.retryAfterMs` 1000, and the socket stays open; on gRPC it is `RESOURCE_EXHAUSTED` with that message and `retry-after: 1`. A live stream can end on it too: a WS socket closes `1013 credits_pending` (reconnect after about 1 s and re-subscribe), and a gRPC stream ends `UNAVAILABLE` with that message and `retry-after: 1` (resubscribe after it); the bytes already sent are billed.
-- Refused calls cost 0 credits, except a getTransactionsForAddress walk refused after it made upstream calls, which bills those calls, and a failed preflight send, which keeps its 75 credits.
-- What spends credits:
-  - **RPC**: each method's credits, in the Credits column of the RPC method catalogue. Token scans also bill per row returned, and a getTransactionsForAddress walk per upstream call it makes, as their catalogue rows show.
-  - **WS and gRPC**: 5 per slot/root/signature subscription, 25 per account/logs-mentions/slotsUpdates subscription (gRPC: an `accounts` filter with an `account` list, or a `transactions` filter narrowed by account), 200 per program/logs-all/block subscription (gRPC: an `accounts` filter with `owner`, `blocks`, `blocksMeta`, `entry` or a transaction firehose), plus 20 per MiB delivered. A gRPC stream that delivers no data books 0 credits.
-  - **Quote plane**: 0 credits; calls count against the account's quote plan. They are answered even when the account's credits are spent: a call that costs 0 credits is never refused for credits.
-
-### Rate limits
-
-Rates are per account (all its keys share one bucket), in cells per second; every method's cells and the plan rates are in the RPC method catalogue. On RPC and the quote plane, a call over its plan rate that fits within 1 s waits and is served, and a call short of a concurrency slot waits up to 3 s for one; only then comes the 429. WebSocket and gRPC refuse at once. A 429 has `-32005` and one of these messages: `rate limit exceeded` (`RATE_LIMITED`), `heavy-class rate limit exceeded` (`HEAVY_CLASS_LIMITED`), `blocking-slot capacity exceeded: <pool> pool`, `scan-index lane capacity exceeded: chot_lane`, `DAS lane capacity exceeded: das_lane`, `quote lane capacity exceeded: quote_lane` or `free quote plan at capacity: ...` (`SLOT_CAP_EXCEEDED`), `overloaded` (`LOAD_SHED`), or, on the Free plan and the free quote plan, `free tier limit for your network reached: ...` (`FREE_SUBNET_LIMITED`: all free keys calling from one network share one budget) and `free tier at capacity on this node: ...` (`FREE_TIER_BUSY`), and `credits for this account are still loading on this node; retry after Retry-After` (`CREDITS_PENDING`: the node has not loaded the account's credits yet, as on a new account's first calls, after a burst that spent this node's share, or just after a node restart). The one 429 with another code is `-32010` `scan index temporarily unavailable, retry` (`CHOT_INDEX_UNAVAILABLE`). Every 429 on RPC and the quote plane carries `Retry-After` in whole seconds and `retry-after-ms`, which is exact; prefer the ms header (a browser can read only `Retry-After`). On gRPC the status is `RESOURCE_EXHAUSTED` with `retry-after` metadata in seconds. On a WS handshake it is 429 with `Retry-After`, and the messages include `connection or subscription cap exceeded` and `overloaded or draining`.
-
-### One retry and backoff policy (all planes)
-
-Backoff means: wait the larger of the server's hint (`retry-after-ms`, else `Retry-After` × 1000) and `250 ms × 2^(attempt−1)` capped at 4 s, plus 0 to 250 ms of random jitter. Never cut a server hint to 4 s. Stop after 4 attempts unless the row says otherwise.
-
-| Error class | Where | Retry? | How | When to stop |
-|---|---|---|---|---|
-| 400 / -32600 / -32602 (malformed, bad params, batch refused, body over 50 KB with HTTP 413) | RPC, quote, swap, prices | No (getTransactionsForAddress's `-32602` `the walk read no history`: yes, as a 429) | Fix the request. | Immediately. |
-| -32601 `method not found` / `method not served` (HTTP 200) | RPC | No | Use a served method. | Immediately. |
-| 401 / -32001, 403 / -32001 `IP_NOT_ALLOWED`, WS 401/403, gRPC UNAUTHENTICATED | all | No | Fix or renew the key, add the scope, or call from an allowed address. | Immediately. |
-| 403 / -32050 `module not enabled for this account` | quote, swap, prices, health | No | Add it with `POST https://carbium.sh/v1/modules/quote`, your session or a Full control account API key, and the JSON body `{"plan": "free"}` (the free plan), or on the dashboard's MODULES page. | Immediately. |
-| gRPC PERMISSION_DENIED | gRPC | No | Act on the message (see the gRPC error table): `streaming is not included in this tier` means upgrade the plan, the allowlist message means call from a listed address, and the rest mean fix the filter or the request. | Immediately. |
-| 402 / -32002, WS subscribe `-32002` | RPC, WS | No | Buy a plan or upgrade. | Immediately. |
-| WS close 1008 `credits_exhausted` | WS | Once | Reconnect once after about 5 s and re-subscribe; if the subscribes answer `-32002`, buy a plan or upgrade; if they answer `-32005` `CREDITS_PENDING`, wait `retryAfterMs` and resend. | After that one reconnect. |
-| WS close 1013 `credits_pending`, gRPC UNAVAILABLE `credits for this account are still loading on this node; retry after Retry-After` | WS, gRPC | Yes | Reconnect after about 1 s (gRPC: after the `retry-after`) and re-subscribe; do not buy anything. | Back off after 3 failed reconnects. |
-| gRPC RESOURCE_EXHAUSTED `credits exhausted` / `consumer_credits_exhausted` | gRPC | No | Buy a plan or upgrade. | Immediately. |
-| 429 / -32005 (including the Free network limits and, on calls that cost credits, `CREDITS_PENDING`), gRPC RESOURCE_EXHAUSTED (rate, or `credits for this account are still loading on this node; retry after Retry-After`) | all | Yes | Back off, honouring `retry-after-ms`. Lower concurrency (quote: at most 8 in flight per key). | 4 attempts, then lower your request rate. |
-| 429 / -32010 `CHOT_INDEX_UNAVAILABLE` (scan index behind) | RPC scans | Yes | Back off from 100 ms (100, 200, 400 ... capped at 5 s), honouring `retry-after-ms`. | About 6 tries, then surface the error. |
-| 503 / -32011 and other 503s (breaker, upstream down, `cooling down`, `stale`) | RPC, quote, swap, prices | Yes | Back off, honouring `Retry-After`. | 4 attempts. For a swap, quote again if more than 30 s have passed since the quote. |
-| 504 (scan over its deadline) | RPC | Yes, once | Narrow the request. | 1 retry. |
-| Network error or timeout, no response | all | Yes | Back off. | 4 attempts. A `sendTransaction` with no response may have landed: check the signature status before sending again. |
-| 200 / -32051 `no route`, -32054 | quote | No (see the why table) | Change the pair or size, or wait the named window. | Do not loop faster than every 30 s. |
-| 200 / -32053 | quote | Only with a much smaller amount | The engine already tried the part under `error.data.max_amount_in`: quote again well under it. | If `why` is `partial_below_fee`, or `max_amount_in` is 0, stop. |
-| 400 / -32095, -32074; 200 / -32081, -32082, -32083, -32096; 200 / -32093 | swap | Quote again | Get a new `quote`, then `swap`. | 3 rounds. |
-| 200 / -32098 | swap | No | The wallet must hold `gate_min` of `gate_mint`. | Immediately. |
-| 200 / -32099 | swap | No | Stop for this token. | Immediately. |
-| On-chain `Custom:6004` (under the slippage floor) | after send | Quote again | Quote, swap, sign, send again. | 3 rounds. |
-| On-chain, any other `Custom` code | after send | No | It is the venue's own error (see Signing, sending and confirming). | Immediately. |
-| Blockhash expired (block height > `lastValidBlockHeight`, not landed) | after send | Quote again | Never re-sign the old message. | 3 rounds. |
-| WS close 1013 `slow_consumer` / `delivery_overload_retry` | WS | Yes | Reconnect with backoff, read faster, subscribe to less. | Back off further after 3 closes in a row. |
-| WS close 1012 `draining` / `stream_gap_reseed_required` | WS | Yes | Reconnect at once with jitter and re-subscribe everything; re-read state you may have missed. | Back off after 3 failed reconnects. |
-| WS close 1001 `idle_timeout` (900 s idle) / `no_pong` (300 s without a pong) | WS | Yes | Reconnect. Answer server pings (sent every 30 s); a pong counts as traffic. | Fix the client. |
-| gRPC RESOURCE_EXHAUSTED `consumer_lagged: your stream fell behind the ring; reduce filters or read faster` | gRPC | Yes | Wait `retry-after` (2 s); reduce filters. | Back off after 3 in a row. |
-| gRPC UNAVAILABLE / DEADLINE_EXCEEDED | gRPC | Yes | Back off and resubscribe. | 4 attempts, then 30 s waits. |
-| gRPC OUT_OF_RANGE `gap: re-seed required` (`fromSlot` too old, or a gap in the upstream feed) | gRPC | Yes, after a re-seed | Reload state over RPC, then resubscribe with no `fromSlot` (or with `fromSlot >= firstAvailable`). | Back off after 3 in a row. |
-| gRPC INVALID_ARGUMENT | gRPC | No | Fix the request. | Immediately. |
 
 ### Complete recipe: quote, build, sign with your own wallet, send, confirm (Node 18+, `npm i @solana/web3.js`)
 
@@ -2105,7 +2077,7 @@ export async function swap(wallet, { src, dst, amountIn, slippageBps = 50, dex, 
       q = await call("quote", [{ src_mint: src, dst_mint: dst, amount_in: String(amountIn), slippage_bps: slippageBps, ...(dex ? { dex } : {}) }]);
     } catch (e) {
       if (e.code === -32053 && e.data?.max_amount_in) throw Object.assign(e, { hint: "send well under " + e.data.max_amount_in });
-      throw e; // -32051 (read e.data.why) / -32054 / -32602 / 401 / 403: retrying now changes nothing
+      throw e; // -32051 (read e.data.why) / -32054 / -32055 / -32602 / 401 / 403: retrying now changes nothing
     }
     if (q.partial) console.warn(`partial: fills ${q.srcAmountIn} of ${q.requestedAmountIn}`);
 
@@ -2182,11 +2154,85 @@ export async function signSwap(b64, keyPair) {
 - [ ] Call `swap` within 30 s of `quote`. On `-32095`, quote again.
 - [ ] Sign only as `user_pubkey`; never modify the message.
 - [ ] Send with `skipPreflight:true`, confirm with `getSignatureStatuses`, and quote again after `lastValidBlockHeight` passes.
-- [ ] Treat `platformFee` as already netted in `destAmountOut` / `minAmountOut`; do not subtract it again.
+- [ ] Treat `platformFee` and any `integratorFee` as already netted in `destAmountOut` / `minAmountOut`; do not subtract them again.
 - [ ] Respect `partial`: the swap spends `srcAmountIn`, not what you asked for.
 - [ ] Read the HTTP status and `error.code` together; HTTP 200 can carry an `error`. Retry only 429, 503 and getTransactionsForAddress's `-32602` `the walk read no history`, with jittered backoff that honours `retry-after-ms`.
 - [ ] Do not poll `prices` per swap (30 s cache); do not gate swaps on `health.canBuild`.
 - [ ] At most 8 quote-plane calls in flight per key.
+
+## Cross-plane: key states, credits, limits, retry
+
+### Key states (all `-32001`; `error.data.reason` names the state)
+
+| Message (exact) | HTTP (RPC/quote) | WS handshake | gRPC status | reason | What to do |
+|---|---|---|---|---|---|
+| `unknown api key` | 401 | 401 | UNAUTHENTICATED | `UNKNOWN_KEY` | Fix the carrier or send the whole key. A rotated key is unknown. Do not retry. |
+| `api key suspended: the plan term ended; renew on the dashboard` | 401 | 401 | UNAUTHENTICATED | `KEY_SUSPENDED` (+`status_reason:"term_ended"`) | Rare: a key issued after a paid term ended, before the account moved to Free. Renew on the dashboard; once the account is on Free, its keys work at Free limits. |
+| `api key suspended; contact support` | 401 | 401 | UNAUTHENTICATED | `KEY_SUSPENDED` | Stop and contact support. |
+| `api key revoked` | 401 | 401 | UNAUTHENTICATED | `KEY_REVOKED` | The key was revoked or deleted. Stop and issue a new key. |
+| `api key disabled; contact support` | 401 | 401 | UNAUTHENTICATED | `KEY_BANNED` | Stop and contact support. |
+| `api key is not enabled for rpc` / `websocket` / `grpc` / `quote` / `das` | 401 | **403** (websocket) | UNAUTHENTICATED | `SCOPE_RPC_MISSING` / `SCOPE_WS_MISSING` / `SCOPE_GRPC_MISSING` / `SCOPE_QUOTE_MISSING` / `SCOPE_DAS_MISSING` | Add the scope to the key on the dashboard. |
+| `client ip address is not on this api key's allowlist; add it on the dashboard or with PATCH /v1/keys/{id}/allowlist` | **403** | **403** | PERMISSION_DENIED | `IP_NOT_ALLOWED` | Call from an address on the key's IP allowlist, or add this one (up to 16 addresses or CIDRs; an empty list admits any address). |
+| `session expired` | 401 | 401 | UNAUTHENTICATED | `EXPIRED_SESSION` | Dashboard session tokens only: sign in again. |
+| `missing api key` (WS only) | n/a | 401 | n/a | n/a | Attach a carrier. |
+| `streaming is not included in this tier; upgrade the plan` | n/a | n/a | PERMISSION_DENIED | n/a | FREE has no gRPC stream. Upgrade the plan. |
+
+A key that is revoked, rotated, suspended or banned, or whose account is deleted, also ends its open connections within about 2 s: a WebSocket closes with `1008 key_revoked`, `key_suspended` or `key_banned`, and a Carbon stream ends UNAUTHENTICATED with the message above (a rotated key's stream reads `api key revoked`).
+
+Scopes are per key: `rpc`, `ws`, `grpc`, `quote`, `das`. Change them on the dashboard. The 10 DAS methods need `das`, which a new key has unless you leave it out. Quote-plane verbs need only `quote` and are never batched. The account must also hold the quote module, or calls get 403 `-32050 "module not enabled for this account"`.
+
+RPC body shape: `{"jsonrpc":"2.0","id":<your id>,"error":{"code":-32001,"message":"unknown api key","data":{"reason":"UNKNOWN_KEY","retryable":false}}}`. `error.data.retryable` is true exactly for the pressure band (429). A reply to an admitted call carries `x-request-id`; quote it to support. The WS handshake refusal body is `{"error":{"message":"..."}}`, not JSON-RPC.
+
+### Credits
+
+- `402`, `-32002`, `"credits exhausted"`, reason `CREDITS_EXHAUSTED`, `retryable:false`, `Retry-After: 1`. A 402 means the account's remaining credits cannot cover the call. On WS the handshake does not check credits: a subscribe answers `-32002` inside the socket, and a live socket whose streamed bytes cannot be paid closes with **1008 `credits_exhausted`**. On gRPC it is `RESOURCE_EXHAUSTED` `credits exhausted` (`consumer_credits_exhausted` on an open stream): do not retry. On RPC and WS do not retry either (after a 1008 close, reconnect once after about 5 s): buy a plan or upgrade on the dashboard (each month of an RPC plan adds its credits; a Quote plan adds none). Near the end of a balance a node can answer 402 while the last credits sit reserved at other nodes; they return within minutes.
+- `429`, `-32005`, `"credits for this account are still loading on this node; retry after Retry-After"`, reason `CREDITS_PENDING`, `retryable:true`, `Retry-After: 1`, `retry-after-ms: 1000`. The account has credits, but this node has not loaded them yet (a new account's first calls, a burst that spent this node's share, or just after a node restart). It is not a 402: wait and send it again. On WS it is a subscribe reply `-32005` with `data.retryAfterMs` 1000, and the socket stays open; on gRPC it is `RESOURCE_EXHAUSTED` with that message and `retry-after: 1`. A live stream can end on it too: a WS socket closes `1013 credits_pending` (reconnect after about 1 s and re-subscribe), and a gRPC stream ends `UNAVAILABLE` with that message and `retry-after: 1` (resubscribe after it); the bytes already sent are billed.
+- Refused calls cost 0 credits, except a getTransactionsForAddress walk refused after it made upstream calls, which bills those calls, and a failed preflight send, which keeps its 75 credits.
+- What spends credits:
+  - **RPC**: each method's credits, in the Credits column of the [RPC method catalogue](https://carbium.sh/skill/rpc.md). Token scans also bill per row returned, and a getTransactionsForAddress walk per upstream call it makes, as their catalogue rows show.
+  - **WS and gRPC**: 5 per slot/root/signature subscription, 25 per account/logs-mentions/slotsUpdates subscription (gRPC: an `accounts` filter with an `account` list, or a `transactions` filter narrowed by account), 200 per program/logs-all/block subscription (gRPC: an `accounts` filter with `owner`, `blocks`, `blocksMeta`, `entry` or a transaction firehose), plus 20 per MiB delivered. A gRPC stream that delivers no data books 0 credits.
+  - **Quote plane**: 0 credits; calls count against the account's quote plan. They are answered even when the account's credits are spent: a call that costs 0 credits is never refused for credits.
+
+### Rate limits
+
+Rates are per account (all its keys share one bucket), in cells per second; every method's cells and the plan rates are in the [RPC method catalogue](https://carbium.sh/skill/rpc.md). On RPC and the quote plane, a call over its plan rate that fits within 1 s waits and is served, and a call short of a concurrency slot waits up to 3 s for one; only then comes the 429. WebSocket and gRPC refuse at once. A 429 has `-32005` and one of these messages: `rate limit exceeded` (`RATE_LIMITED`), `heavy-class rate limit exceeded` (`HEAVY_CLASS_LIMITED`), `blocking-slot capacity exceeded: <pool> pool`, `scan-index lane capacity exceeded: chot_lane`, `DAS lane capacity exceeded: das_lane`, `quote lane capacity exceeded: quote_lane` or `free quote plan at capacity: ...` (`SLOT_CAP_EXCEEDED`), `overloaded` (`LOAD_SHED`), or, on the Free plan and the free quote plan, `free tier limit for your network reached: ...` (`FREE_SUBNET_LIMITED`: all free keys calling from one network share one budget) and `free tier at capacity on this node: ...` (`FREE_TIER_BUSY`), and `credits for this account are still loading on this node; retry after Retry-After` (`CREDITS_PENDING`: the node has not loaded the account's credits yet, as on a new account's first calls, after a burst that spent this node's share, or just after a node restart). The one 429 with another code is `-32010` `scan index temporarily unavailable, retry` (`CHOT_INDEX_UNAVAILABLE`). Every 429 on RPC and the quote plane carries `Retry-After` in whole seconds and `retry-after-ms`, which is exact; prefer the ms header (a browser can read only `Retry-After`). On gRPC the status is `RESOURCE_EXHAUSTED` with `retry-after` metadata in seconds. On a WS handshake it is 429 with `Retry-After`, and the messages include `connection or subscription cap exceeded` and `overloaded or draining`.
+
+### One retry and backoff policy (all planes)
+
+Backoff means: wait the larger of the server's hint (`retry-after-ms`, else `Retry-After` × 1000) and `250 ms × 2^(attempt−1)` capped at 4 s, plus 0 to 250 ms of random jitter. Never cut a server hint to 4 s. Stop after 4 attempts unless the row says otherwise.
+
+| Error class | Where | Retry? | How | When to stop |
+|---|---|---|---|---|
+| 400 / -32600 / -32602 (malformed, bad params, batch refused, body over 50 KB with HTTP 413) | RPC, quote, swap, prices | No (getTransactionsForAddress's `-32602` `the walk read no history`: yes, as a 429) | Fix the request. | Immediately. |
+| -32601 `method not found` / `method not served` (HTTP 200) | RPC | No | Use a served method. | Immediately. |
+| 401 / -32001, 403 / -32001 `IP_NOT_ALLOWED`, WS 401/403, gRPC UNAUTHENTICATED | all | No | Fix or renew the key, add the scope, or call from an allowed address. | Immediately. |
+| 403 / -32050 `module not enabled for this account` | quote, swap, prices, health | No | Add it with `POST https://carbium.sh/v1/modules/quote`, your session or a Full control account API key, and the JSON body `{"plan": "free"}` (the free plan), or on the dashboard's MODULES page. | Immediately. |
+| gRPC PERMISSION_DENIED | gRPC | No | Act on the message (see the [gRPC error table](https://carbium.sh/skill/stream.md)): `streaming is not included in this tier` means upgrade the plan, the allowlist message means call from a listed address, and the rest mean fix the filter or the request. | Immediately. |
+| 402 / -32002, WS subscribe `-32002` | RPC, WS | No | Buy a plan or upgrade. | Immediately. |
+| WS close 1008 `credits_exhausted` | WS | Once | Reconnect once after about 5 s and re-subscribe; if the subscribes answer `-32002`, buy a plan or upgrade; if they answer `-32005` `CREDITS_PENDING`, wait `retryAfterMs` and resend. | After that one reconnect. |
+| WS close 1013 `credits_pending`, gRPC UNAVAILABLE `credits for this account are still loading on this node; retry after Retry-After` | WS, gRPC | Yes | Reconnect after about 1 s (gRPC: after the `retry-after`) and re-subscribe; do not buy anything. | Back off after 3 failed reconnects. |
+| gRPC RESOURCE_EXHAUSTED `credits exhausted` / `consumer_credits_exhausted` | gRPC | No | Buy a plan or upgrade. | Immediately. |
+| 429 / -32005 (including the Free network limits and, on calls that cost credits, `CREDITS_PENDING`), gRPC RESOURCE_EXHAUSTED (rate, or `credits for this account are still loading on this node; retry after Retry-After`) | all | Yes | Back off, honouring `retry-after-ms`. Lower concurrency (quote: at most 8 in flight per key). | 4 attempts, then lower your request rate. |
+| 429 / -32010 `CHOT_INDEX_UNAVAILABLE` (scan index behind) | RPC scans | Yes | Back off from 100 ms (100, 200, 400 ... capped at 5 s), honouring `retry-after-ms`. | About 6 tries, then surface the error. |
+| 503 / -32011 and other 503s (breaker, upstream down, `cooling down`, `stale`) | RPC, quote, swap, prices | Yes | Back off, honouring `Retry-After`. | 4 attempts. For a swap, quote again if more than 30 s have passed since the quote. |
+| 504 (scan over its deadline) | RPC | Yes, once | Narrow the request. | 1 retry. |
+| Network error or timeout, no response | all | Yes | Back off. | 4 attempts. A `sendTransaction` with no response may have landed: check the signature status before sending again. |
+| 200 / -32051 `no route`, -32054 | quote | No (see the [why table](https://carbium.sh/skill/quote.md)) | Change the pair or size, or wait the named window. | Do not loop faster than every 30 s. |
+| 200 / -32055 | quote, swap | Only with a changed ask | Raise `maxAccounts` (at most 64), lower `amount_in`, or quote without `maxAccounts` and `swapTag`. | Once per change. |
+| 200 / -32053 | quote | Only with a much smaller amount | The engine already tried the part under `error.data.max_amount_in`: quote again well under it. | If `why` is `partial_below_fee`, or `max_amount_in` is 0, stop. |
+| 400 / -32095, -32074; 200 / -32081, -32082, -32083, -32096; 200 / -32093 | swap | Quote again | Get a new `quote`, then `swap`. | 3 rounds. |
+| 200 / -32098 | swap | No | The wallet must hold `gate_min` of `gate_mint`. | Immediately. |
+| 200 / -32099 | swap | No | Stop for this token. | Immediately. |
+| On-chain `Custom:6004` (under the slippage floor) | after send | Quote again | Quote, swap, sign, send again. | 3 rounds. |
+| On-chain, any other `Custom` code | after send | No | It is the venue's own error (see [Signing, sending and confirming](https://carbium.sh/skill/quote.md)). | Immediately. |
+| Blockhash expired (block height > `lastValidBlockHeight`, not landed) | after send | Quote again | Never re-sign the old message. | 3 rounds. |
+| WS close 1013 `slow_consumer` / `delivery_overload_retry` | WS | Yes | Reconnect with backoff, read faster, subscribe to less. | Back off further after 3 closes in a row. |
+| WS close 1012 `draining` / `stream_gap_reseed_required` | WS | Yes | Reconnect at once with jitter and re-subscribe everything; re-read state you may have missed. | Back off after 3 failed reconnects. |
+| WS close 1001 `idle_timeout` (900 s idle) / `no_pong` (300 s without a pong) | WS | Yes | Reconnect. Answer server pings (sent every 30 s); a pong counts as traffic. | Fix the client. |
+| gRPC RESOURCE_EXHAUSTED `consumer_lagged: your stream fell behind the ring; reduce filters or read faster` | gRPC | Yes | Wait `retry-after` (2 s); reduce filters. | Back off after 3 in a row. |
+| gRPC UNAVAILABLE / DEADLINE_EXCEEDED | gRPC | Yes | Back off and resubscribe. | 4 attempts, then 30 s waits. |
+| gRPC OUT_OF_RANGE `gap: re-seed required` (`fromSlot` too old, or a gap in the upstream feed) | gRPC | Yes, after a re-seed | Reload state over RPC, then resubscribe with no `fromSlot` (or with `fromSlot >= firstAvailable`). | Back off after 3 in a row. |
+| gRPC INVALID_ARGUMENT | gRPC | No | Fix the request. | Immediately. |
 
 ## Account, keys and billing
 
@@ -2450,7 +2496,7 @@ The plans are FREE, DEV, BUSINESS (`buss` on the wire) and PRO, each by the mont
 - `plans[]`, one entry per paid plan: `tier`, `amount_minor` (US cents), `currency`, `period` (`month`), `sellable`, `recurring` (also sold as auto-renew), `card` (sold by card here) and `credit_grant` (the credits each paid month adds; `null` means unmetered).
 - `quote[]`: the Quote module's plans, with their `rps`.
 
-Never hard-code a price. Read this endpoint. Per-plan rates and connection limits are in the RPC, WebSocket and stream sections. The quote ladder is under Quote plans and what counts.
+Never hard-code a price. Read this endpoint. Per-plan rates and connection limits are in the [RPC](https://carbium.sh/skill/rpc.md), [WebSocket](https://carbium.sh/skill/websocket.md) and [stream](https://carbium.sh/skill/stream.md) sections. The quote ladder is under [Quote plans and what counts](https://carbium.sh/skill/quote.md).
 
 - **Moving up:** you can move up at any time, except by card for one month while another plan renews on the card (see Paying by card or in USDC or USDT). The unused part of the current term carries over by value.
 - **Same plan again:** buying it extends its term. While it renews by card, buy it for one month or in USDC or USDT.
@@ -2629,7 +2675,7 @@ Never, with any account API key: buy or upgrade a plan or a paid module; open th
 | `GET /v1/account/api-keys` | none | the live keys' records, newest first |
 | `DELETE /v1/account/api-keys/{id}` | none | {api_key_id, revoked}; a repeat answers the same |
 
-The bodies and answers of the service-key and webhook calls are the ones under "Account, keys and billing" and "Webhooks" above. `key_id` is the service key's own id, as `GET /v1/keys` lists it, or `null` for calls made before a key was rotated or by a key since deleted: the ledger names a key by its value's hash. Times in the usage reads are UTC.
+The bodies and answers of the service-key and webhook calls are the ones under "Account, keys and billing" above and "[Webhooks](https://carbium.sh/skill/webhooks.md)". `key_id` is the service key's own id, as `GET /v1/keys` lists it, or `null` for calls made before a key was rotated or by a key since deleted: the ledger names a key by its value's hash. Times in the usage reads are UTC.
 
 ### A key's record
 
@@ -2685,7 +2731,7 @@ The person revokes it on the ACCOUNT page, and its next call answers 401. Until 
 - Retrying a 4xx unchanged, or re-signing a swap that may still land.
 - Calling RPC methods over the WebSocket: they answer `-32601`.
 - Expecting `accountSubscribe`, or a gRPC `accounts` list, to stream a plain SOL wallet.
-- Other providers' quote params (`inputMint`, `outputMint`, `amount`, `onlyDirectRoutes`): this quote takes `src_mint`, `dst_mint`, `amount_in`, `slippage_bps`, an optional `dex`, an optional `txVersion` and an optional `swapTag`, and refuses any other name.
+- Other providers' quote params (`inputMint`, `outputMint`, `amount`, `onlyDirectRoutes`): this quote takes `src_mint`, `dst_mint`, `amount_in`, `slippage_bps`, an optional `dex` (or `dexes`), an optional `txVersion`, an optional `swapTag`, an optional `maxAccounts` and an optional `integrator_fee_bps` with `integrator_fee_account` (or `fee_bps` with `treasury`), and refuses any other name.
 
 
 ## Testing

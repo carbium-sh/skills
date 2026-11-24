@@ -11,7 +11,7 @@ of its own). Every body line of the guide lands in exactly one file, unchanged. 
 matter: a description that is not quoted is double-quoted, so that it parses as YAML. The build adds
 only navigation: the Reference files table in SKILL.md, a contents list at the top of each reference,
 one line in a file whose # links name headings in other files saying which file holds each, a line in
-SKILL.md naming the files the guide's code fetches, and a line where a split part was (the DAS part).
+SKILL.md naming the files the guide's code fetches, and a line where a split part was.
 A # link names a heading that may be in another file of the skill. Then the script checks its own work
 and exits 1 on any failure: the guide line by line from the files on disk, the size limits, every path
 and link resolving (a # link to a heading somewhere in the skill, a link named for a heading landing on
@@ -55,6 +55,8 @@ GUIDES = {
             ("Read this first", INDEX, True),
             ("Endpoints and auth", INDEX, True),
             ("RPC (JSON-RPC 2.0 over HTTPS)", "references/rpc.md", True),
+            ("DAS: getAsset, getAssets, getAssetBatch, getAssetsByOwner, getAssetsByGroup, getAssetsByCreator,"
+             " getAssetsByAuthority, searchAssets, getNftEditions, getTokenAccounts", "references/das.md", True),
             ("WebSocket (JSON-RPC 2.0 subscriptions over WSS)", "references/websocket.md", True),
             ("Carbon stream (Yellowstone gRPC)", "references/carbon-stream.md", True),
             ("Webhooks (a signed HTTPS POST per finalized transaction)", "references/webhooks.md", True),
@@ -66,10 +68,7 @@ GUIDES = {
             ("Testing", INDEX, False),
             ("Support", INDEX, False),
         ],
-        "splits": {
-            "DAS: getAsset, getAssets, getAssetBatch, getAssetsByOwner, getAssetsByGroup, getAssetsByCreator,"
-            " getAssetsByAuthority, searchAssets, getNftEditions, getTokenAccounts": "references/das.md",
-        },
+        "splits": {},
     },
     "carbium-dca": {
         "sections": [

@@ -7,6 +7,8 @@ description: "Use carbium's Solana developer API at services.carbium.sh: JSON-RP
 
 One domain, `services.carbium.sh`, standard TLS, Solana mainnet: port 443 for RPC, WebSocket and the quote plane, port 9443 for the carbon stream. Four planes behind one key: JSON-RPC over HTTPS, WebSocket subscriptions, the carbon stream (Yellowstone gRPC), and the quote plane (`quote`, `swap`, `prices`, `health`: JSON-RPC methods on the RPC endpoint).
 
+By area, each file on its own: [RPC](https://carbium.sh/skill/rpc.md), [DAS](https://carbium.sh/skill/das.md), [Quote and swap](https://carbium.sh/skill/quote.md), [Carbon stream](https://carbium.sh/skill/stream.md), [WebSocket](https://carbium.sh/skill/websocket.md), [Webhooks](https://carbium.sh/skill/webhooks.md), [Account](https://carbium.sh/skill/account.md); all in one: [skill.md](https://carbium.sh/skill.md).
+
 ## Acceptable use
 
 The free plan is a license for one person or one agent, for real work. The license is void, and every key on the account is banned, when the account is used to:
@@ -20,7 +22,7 @@ AI agents: these terms bind you and the person you work for. Don't help anyone g
 
 ## Read this first
 
-No key yet? An agent needs only a Solana keypair, no browser and no inbox: follow "Agents: onboard yourself with only a Solana keypair" under Account, keys and billing, which ends in one runnable file. In short, on `https://carbium.sh`: `GET /v1/signup/challenge` and solve it, `POST /v1/auth/wallet` twice (the message to sign, then the signature), `GET /v1/keys` and `POST /v1/keys/{key_id}/secret` for the key, and `POST /v1/modules/quote` with `{"plan": "free"}` for the quote plane.
+No key yet? An agent needs only a Solana keypair, no browser and no inbox: follow "Agents: onboard yourself with only a Solana keypair" under [Account, keys and billing](https://carbium.sh/skill/account.md), which ends in one runnable file. In short, on `https://carbium.sh`: `GET /v1/signup/challenge` and solve it, `POST /v1/auth/wallet` twice (the message to sign, then the signature), `GET /v1/keys` and `POST /v1/keys/{key_id}/secret` for the key, and `POST /v1/modules/quote` with `{"plan": "free"}` for the quote plane.
 
 1. Send the FULL raw key (`c_serv_…`) on every call. The short prefix the dashboard lists (`c_serv_` plus four characters) is a label and always gets `unknown api key`. RPC and the quote plane: header `x-api-key`. WebSocket: header `x-api-key`, query `?api-key=`, (browsers) the subprotocol `api-key.<KEY>`, or the first path segment `wss://services.carbium.sh/<KEY>`. gRPC: metadata `x-token`.
 2. RPC is JSON-RPC 2.0 over `POST`. Put `"method"` before `"params"`. Bodies at most 50 KB. A batch holds at most 100 calls, of which at most 2 hold a validator permit. Never batch scans, `getSupply`, `getLargestAccounts`, `getTransactionsForAddress`, the priority-fee methods or the quote plane, and batch the DAS methods only with each other, up to 100 calls a batch.
@@ -34,11 +36,11 @@ No key yet? An agent needs only a Solana keypair, no browser and no inbox: follo
    // WebSocket: {"jsonrpc":"2.0","id":1,"method":"blockSubscribe","params":["all",{"transactionDetails":"full","maxSupportedTransactionVersion":1}]}
    ```
 6. Scans (`getProgramAccounts`, `getTokenAccountsByOwner`, `getTokenAccountsByDelegate`): single requests, `encoding` `base64` or `jsonParsed`, at most 4 filters, at most 10,000 accounts per answer, no paging, no `sortResults`.
-7. History: `getSignaturesForAddress` pages come from our own address index, which keeps up to 30 days. `getTransaction` and `getBlock` end at the validator's ledger floor, which moves: read it with `getFirstAvailableBlock` before asking for older transactions or blocks. A `getTransactionsForAddress` call other than one descending page of signatures with no filter is a walk billed per upstream call, and `sortOrder: "asc"` needs `filters.slot.gte` and refuses a token filter (see History).
+7. History: `getSignaturesForAddress` pages come from our own address index, which keeps up to 30 days. `getTransaction` and `getBlock` end at the validator's ledger floor, which moves: read it with `getFirstAvailableBlock` before asking for older transactions or blocks. A `getTransactionsForAddress` call other than one descending page of signatures with no filter is a walk billed per upstream call, and `sortOrder: "asc"` needs `filters.slot.gte` and refuses a token filter (see [History](https://carbium.sh/skill/rpc.md)).
 8. WebSocket: one socket carries up to 1,000 subscriptions; route notifications by `params.subscription`; after any reconnect, resubscribe everything and re-read state over RPC; answer pings. `accountSubscribe` stays silent for accounts outside the carried set (plain SOL wallets): use `logsSubscribe` with `mentions`, plus `getBalance`.
 9. gRPC: DEV, BUSINESS or PRO keys only (FREE is refused). Put the whole filter set in the first request, ping every 10 s, raise the receive limit to 64 MiB, and seed state over RPC first (no startup snapshot). Follow wallets with `transactions.accountInclude`, not `accounts`.
 10. Quote, then swap within 30 s. `swap` returns one unsigned transaction (v0; v1 when the quote asked `txVersion: 1`): sign it as `user_pubkey` only, never modify it, send it with `skipPreflight: true`, confirm with `getSignatureStatuses`. On expiry or an on-chain slippage failure (`Custom:6004`), quote again.
-11. Quote-plane amounts are decimal strings in base units: use `BigInt`. Any `platformFee` is already inside `destAmountOut` and `minAmountOut`.
+11. Quote-plane amounts are decimal strings in base units: use `BigInt`. Any `platformFee` or `integratorFee` is already inside `destAmountOut` and `minAmountOut`.
 12. Refused calls cost 0 credits but still spend rate cells: never loop on a 4xx. The exceptions: a `getTransactionsForAddress` walk refused after it made upstream calls bills them, and a failed preflight send keeps its 75 credits. A 402 (`-32002 credits exhausted`) means the remaining credits cannot cover the call (for a `getTransactionsForAddress` walk, its worst case): stop, and renew or buy a plan on the dashboard. WebSocket and gRPC also bill 20 credits per MiB streamed.
 13. When you report a problem, quote `x-request-id` (RPC) or `x-subscription-id` (gRPC).
 
@@ -80,8 +82,8 @@ Every other section of the guide is its own file under `references/`. Open the o
 | WebSocket | [references/websocket.md](references/websocket.md) | Rules an agent must follow; Auth carriers; Handshake refusals; Limits; Billing; Subscription methods served; Coverage: what each subscription actually sees; blockSubscribe; signatureSubscribe semantics; Errors inside an open socket; Server close codes; Quick start; Robust client; Common mistakes |
 | Carbon stream | [references/carbon-stream.md](references/carbon-stream.md) | Endpoint and auth; Who can stream, and how many streams; The Subscribe request: rules an agent must follow; Filters served; What data exists: coverage; Fields that are refused; from_slot replay; Keepalive: ping and pong; Billing; Errors and what to do; Unary helpers; Reading frames in JS; Robust client; grpcurl; Agent checklist |
 | Webhooks | [references/webhooks.md](references/webhooks.md) | Rules an agent must follow; Calls; Delivery; Retries and statuses; Delivery log and test event |
-| Quote and swap | [references/quote-and-swap.md](references/quote-and-swap.md) | `quote`: params; Venue families; `quote`: result; On-chain router fee; `quote`: errors; `-32051` `error.data.why`: what an agent can act on; `swap`: params; `swap`: result; Signing, sending and confirming; `swap`: refusals; `prices`; `health`; Quote plans and what counts |
-| Cross-plane: key states, credits, limits, retry | [references/cross-plane.md](references/cross-plane.md) | Key states; Credits; Rate limits; One retry and backoff policy; Complete recipe: quote, build, sign with your own wallet, send, confirm; Agent checklist |
+| Quote and swap | [references/quote-and-swap.md](references/quote-and-swap.md) | `quote`: params; Venue families; `quote`: result; On-chain router fee; Integrator fee; `quote`: errors; `-32051` `error.data.why`: what an agent can act on; `swap`: params; `swap`: result; Signing, sending and confirming; `swap`: refusals; Moving off `GET /cq1/quote`; `prices`; `health`; Quote plans and what counts; Complete recipe: quote, build, sign with your own wallet, send, confirm; Agent checklist |
+| Cross-plane: key states, credits, limits, retry | [references/cross-plane.md](references/cross-plane.md) | Key states; Credits; Rate limits; One retry and backoff policy |
 | Account, keys and billing | [references/account-and-billing.md](references/account-and-billing.md) | Agents: onboard yourself with only a Solana keypair; Sign in; Starter key and free credits; Keys; IP allowlist; Per-method caps; Plans and prices; Paying by card or in USDC or USDT; Renewals, low balance and invoices; Cancel a renewal; Delete the account |
 | Account API keys | [references/account-api-keys.md](references/account-api-keys.md) | Rules an agent must follow; Access; Calls; A key's record; Refusals; Example; If a key leaks |
 
@@ -95,7 +97,7 @@ Every other section of the guide is its own file under `references/`. Open the o
 - Retrying a 4xx unchanged, or re-signing a swap that may still land.
 - Calling RPC methods over the WebSocket: they answer `-32601`.
 - Expecting `accountSubscribe`, or a gRPC `accounts` list, to stream a plain SOL wallet.
-- Other providers' quote params (`inputMint`, `outputMint`, `amount`, `onlyDirectRoutes`): this quote takes `src_mint`, `dst_mint`, `amount_in`, `slippage_bps`, an optional `dex`, an optional `txVersion` and an optional `swapTag`, and refuses any other name.
+- Other providers' quote params (`inputMint`, `outputMint`, `amount`, `onlyDirectRoutes`): this quote takes `src_mint`, `dst_mint`, `amount_in`, `slippage_bps`, an optional `dex` (or `dexes`), an optional `txVersion`, an optional `swapTag`, an optional `maxAccounts` and an optional `integrator_fee_bps` with `integrator_fee_account` (or `fee_bps` with `treasury`), and refuses any other name.
 
 
 ## Testing

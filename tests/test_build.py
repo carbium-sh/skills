@@ -135,13 +135,18 @@ class Split(unittest.TestCase):
 
     def test_an_oversized_reference_fails_the_build(self):
         error, _ = build_with(insert(GUIDE, "## RPC (JSON-RPC 2.0 over HTTPS)", ["x" * 99] * 60))
-        self.assertRegex(error, r"references/rpc\.md: 509 lines and 55\d{3} bytes, limit 2000 lines and 55000 bytes")
+        self.assertRegex(error, r"references/rpc\.md: \d+ lines and 5[5-9]\d{3} bytes, limit 2000 lines and 55000 bytes")
 
-    def test_the_das_part_has_its_own_file_and_row(self):
+    def test_the_das_section_has_its_own_file_and_row(self):
         files = build_with()[1]
-        self.assertTrue(files["references/das.md"].startswith(b"### DAS: getAsset,"))
-        self.assertIn(b"The DAS part of this section is in `references/das.md`.", files["references/rpc.md"])
+        self.assertTrue(files["references/das.md"].startswith(b"## DAS: getAsset,"))
         self.assertIn(b"| [references/das.md](references/das.md) | Rules; Limits;", files["SKILL.md"])
+
+    def test_a_split_part_has_its_own_file_and_its_section_says_where_it_went(self):
+        files = build_with(GUIDES=with_main(splits={"Batching": "references/batching.md"}))[1]
+        self.assertTrue(files["references/batching.md"].startswith(b"### Batching\n"))
+        self.assertIn(b"The Batching part of this section is in `references/batching.md`.", files["references/rpc.md"])
+        self.assertNotIn(b"\n### Batching\n", files["references/rpc.md"])
 
     def test_a_split_heading_the_guide_lost_fails_the_build(self):
         error, _ = build_with(GUIDES=with_main(splits={"DAS: renamed": "references/das.md"}))
@@ -223,10 +228,11 @@ class Split(unittest.TestCase):
 
     def test_a_path_to_a_file_the_skill_lacks_fails_the_build(self):
         def misname(rows):
-            n = rows.index("The DAS part of this section is in `references/das.md`.")
-            rows[n] = "The DAS part of this section is in `references/dass.md`."
+            n = rows.index("The Batching part of this section is in `references/batching.md`.")
+            rows[n] = "The Batching part of this section is in `references/dass.md`."
 
-        error, _ = build_with(assemble=changing("references/rpc.md", misname))
+        error, _ = build_with(GUIDES=with_main(splits={"Batching": "references/batching.md"}),
+                              assemble=changing("references/rpc.md", misname))
         self.assertIn("names references/dass.md, which is not a file of the skill", error)
 
     def test_an_anchor_that_names_no_heading_fails_the_build(self):

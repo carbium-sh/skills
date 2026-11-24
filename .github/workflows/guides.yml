@@ -1,0 +1,43 @@
+name: guides
+# Compares the two published guides with the copies the skills are built from. A scheduled run that fails opens an
+# issue: fetch both guides, rebuild and raise the version (README, "Regenerate the skills").
+on:
+  schedule:
+    - cron: '41 5 * * *'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  guides:
+    if: github.repository == 'carbium-sh/skills'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: |
+          curl -fsSL --retry 3 https://carbium.sh/skill.md -o carbium-skill.md
+          curl -fsSL --retry 3 https://carbium.io/docs/dca/skill.md -o carbium-dca-skill.md
+          differs=0
+          for guide in carbium-skill.md carbium-dca-skill.md; do
+            cmp -s "$guide" "source/$guide" || { echo "$guide is no longer the copy in source/"; differs=1; }
+          done
+          exit "$differs"
+  report:
+    # A scheduled run that failed opens one issue, or adds to the one already open.
+    needs: guides
+    if: failure() && github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      issues: write
+    steps:
+      - run: |
+          title='A published guide changed, or the scheduled guide check failed'
+          open=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search "in:title \"$title\"" --json number --jq '.[0].number // empty')
+          if [ -n "$open" ]; then gh issue comment "$open" --repo "$GITHUB_REPOSITORY" --body "Failed again: $RUN_URL"
+          else gh issue create --repo "$GITHUB_REPOSITORY" --title "$title" --body "$RUN_URL"; fi
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}

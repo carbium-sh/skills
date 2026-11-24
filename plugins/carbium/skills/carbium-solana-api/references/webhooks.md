@@ -8,7 +8,7 @@ Contents, with the line each part starts on in this file:
 - Retries and statuses: line 110
 - Delivery log and test event: line 125
 
-Register an HTTPS address and a list of Solana addresses; each finalized transaction that touches one of them arrives there as a signed `POST`, with no socket or stream to hold open. You manage webhooks on the dashboard's own API at `https://carbium.sh` with the dashboard session (`Authorization: Bearer <session token>`, as under Account, keys and billing) or an account API key (Account API keys), never a service key. Send each JSON body with `Content-Type: application/json`.
+Register an HTTPS address and a list of Solana addresses; each finalized transaction that touches one of them arrives there as a signed `POST`, with no socket or stream to hold open. You manage webhooks on the dashboard's own API at `https://carbium.sh` with the dashboard session (`Authorization: Bearer <session token>`, as under [Account, keys and billing](https://carbium.sh/skill/account.md)) or an account API key ([Account API keys](https://carbium.sh/skill/account.md)), never a service key. Send each JSON body with `Content-Type: application/json`.
 
 ### Rules an agent must follow
 
