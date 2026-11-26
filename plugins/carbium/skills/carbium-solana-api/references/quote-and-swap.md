@@ -1,4 +1,4 @@
-## Quote and swap (`quote`, `swap`, `prices`, `health`)
+## Quote and router (`quote`, `swap`, `prices`, `health`)
 
 Contents, with the line each part starts on in this file:
 
@@ -20,13 +20,13 @@ Contents, with the line each part starts on in this file:
 - Complete recipe: quote, build, sign with your own wallet, send, confirm (Node 18+, `npm i @solana/web3.js`): line 307
 - Agent checklist (quote plane): line 446
 
-The quote plane uses JSON-RPC 2.0 over HTTPS at `POST https://services.carbium.sh`, on the same endpoint and with the same key carriers as RPC. It has four verbs: `quote`, `swap`, `prices` and `health`. `POST /quote` is not an endpoint, so put the method name in the JSON body. Use `quote` and `swap` for every quote and swap. `GET /cq1/quote` is the old quote path by query string, kept only for callers already on it: move to `quote` (see Moving off `GET /cq1/quote`).
+The quote plane uses JSON-RPC 2.0 over HTTPS at `POST https://services.carbium.sh`, on RPC's endpoint with RPC's key carriers, or with no key at 30 calls a minute per IP address. It has four verbs: `quote`, `swap`, `prices` and `health`. `POST /quote` is not an endpoint, so put the method name in the JSON body. Use `quote` and `swap` for every quote and transaction. `GET /cq1/quote` is the old quote path, kept only for callers already on it: move to `quote` (see Moving off `GET /cq1/quote`).
 
 Rules an agent must follow:
 - Send one quote-plane call per HTTP request. A batch that contains `quote`, `swap` or `prices` is refused whole with HTTP 400 `-32600 "quote is not batchable"`, and each element of the batch gets that error. A batch that contains `health` is refused with HTTP 400 `-32602 "quote is not batchable"` and `id: null`.
 - Params are snake_case, except `txVersion`, `swapTag` and `maxAccounts`. You can send them positionally (`"params":[{...}]`) or by name (`"params":{...}`). Results are camelCase.
 - Every amount is a decimal string in base units (atoms or lamports). Parse amounts with `BigInt`, never `Number`.
-- Do not treat HTTP 200 as success: several answers about the pair itself (no route, no live pool, an input larger than the pool can pay, some swap refusals) come back as HTTP 200 with an `error`. Read `error.code` and the HTTP status together: `-32093` means quote again at HTTP 200 and retry with backoff at HTTP 503.
+- Do not treat HTTP 200 as success: several answers about the pair itself (no route, no live pool, an input larger than the pool can pay, some `swap` refusals) come back as HTTP 200 with an `error`. Read `error.code` and the HTTP status together: `-32093` means quote again at HTTP 200 and retry with backoff at HTTP 503.
 - An unknown parameter name is refused and never ignored silently. The one exception is `fft`, in any letter case, which is accepted and dropped by both `quote` and `swap`.
 
 ### `quote`: params
@@ -38,10 +38,10 @@ Rules an agent must follow:
 | `amount_in` | u64, as a JSON number or a decimal string | The input amount, in base units. Must be non-zero. Use a string above 2^53. |
 | `slippage_bps` | integer 0 to 5000 | Sets `minAmountOut`: 50 means 0.5%. Values above 5000 are refused. |
 | `dex` (optional; `dexes` is an alias) | a label string, or an array of 1 to 17 labels | Restricts the quote to these venue families, one hop from `src_mint` to `dst_mint` (it may split across their pools); a pair with no such route answers `-32051` with why `no_route_in_pinned_dex`, never another venue's route. Each label is at most 32 characters from `[A-Za-z0-9._-]` and matches case-insensitively. Send `dex` or `dexes`, never both. Omit it to search every family, multi-hop and split. |
-| `txVersion` (optional) | number, 0 or 1 | 0 (default): a v0 transaction with address lookup tables, at most 1,232 B. 1: a v1 transaction with every address inline (no lookup tables), at most 4,096 B, for routes v0 cannot fit. v1 lifts the byte limit, not the 64-account limit: a route that needs more than 64 accounts is refused in both versions. The swap built from the quote is the version the quote names. v1 is built for every family; it has not yet been landed on `r-cpmm`, `m-dbc` or `m-dbc-hook` routes. Any other value is refused: `-32602` `txVersion must be 0 or 1`. |
-| `swapTag` (optional) | number, 0 or 1 | 0 (default): the router picks the form of the swap instruction. 1: the plain form: its data starts with tag `0x01` and has no middle block, and each middle token account is created by its own idempotent instruction, paid and owned by your wallet and left open. Route, price, fee and floor are the same. v0 only: with `txVersion: 1` the quote is refused `-32602` `the quote upstream refused the request` with `error.data.code` `swap_tag_format`. The swap built from the quote is the tagged one, and the quote and the swap both answer `swapTag: 1`. Any other value is refused: `-32602` `swapTag must be 0 or 1`. |
-| `maxAccounts` (optional) | number, 1 to 64 | The most accounts the swap instruction may carry, repeats counted. Omitted, there is no cap, except 64 under `swapTag: 1`. When no route fits the cap, the quote answers HTTP 200 `-32055` `no route fits the account cap`. Out of range, it is refused `-32602` `the quote upstream refused the request` with `error.data.code` `bad_max_accounts`; any value that is not a whole number is refused `-32602` `maxAccounts must be a whole number`. |
-| `integrator_fee_bps` (optional; `fee_bps` is an alias) | whole number 0 to 5000, as a JSON number or a decimal string | Your own fee on the swap, in basis points: 50 is 0.5%. 0 means no fee. Send it with `integrator_fee_account`, or send neither. Above 0, not with `swapTag: 1`. |
+| `txVersion` (optional) | number, 0 or 1 | 0 (default): a v0 transaction with address lookup tables, at most 1,232 B. 1: a v1 transaction with every address inline (no lookup tables), at most 4,096 B, for routes v0 cannot fit. v1 lifts the byte limit, not the 64-account limit: a route that needs more than 64 accounts is refused in both versions. The transaction built from the quote is the version the quote names. v1 is built for every family; it has not yet been landed on `r-cpmm`, `m-dbc` or `m-dbc-hook` routes. Any other value is refused: `-32602` `txVersion must be 0 or 1`. |
+| `swapTag` (optional) | number, 0 or 1 | 0 (default): the router picks its instruction's form. 1: the plain form: its data starts with tag `0x01` and has no middle block, and each middle token account is created by its own idempotent instruction, paid and owned by your wallet and left open. Route, price, fee and floor are the same. v0 only: with `txVersion: 1` the quote is refused `-32602` `the quote upstream refused the request` with `error.data.code` `swap_tag_format`. The transaction built from the quote is the tagged one, and the `quote` and `swap` calls both answer `swapTag: 1`. Any other value is refused: `-32602` `swapTag must be 0 or 1`. |
+| `maxAccounts` (optional) | number, 1 to 64 | The most accounts the router instruction may carry, repeats counted. Omitted, there is no cap, except 64 under `swapTag: 1`. When no route fits the cap, the quote answers HTTP 200 `-32055` `no route fits the account cap`. Out of range, it is refused `-32602` `the quote upstream refused the request` with `error.data.code` `bad_max_accounts`; any value that is not a whole number is refused `-32602` `maxAccounts must be a whole number`. |
+| `integrator_fee_bps` (optional; `fee_bps` is an alias) | whole number 0 to 5000, as a JSON number or a decimal string | Your own fee, in basis points: 50 is 0.5%. 0 means no fee. Send it with `integrator_fee_account`, or send neither. Above 0, not with `swapTag: 1`. |
 | `integrator_fee_account` (optional; `treasury` is an alias) | base58, 32 bytes | The wallet that receives your fee: a wallet address, not a token account. |
 
 Wrapped SOL is `So11111111111111111111111111111111111111112`. Use it for SOL at either end.
@@ -86,8 +86,8 @@ Bonding-curve pools: `quote` serves a token on its curve and, after it migrates,
 | `quoteId` | 32 lowercase hex | The handle `swap` takes. It is valid for 30 s, can be evicted sooner under load and is forgotten when the service restarts. You can reuse it within 30 s, for example to rebuild with a different priority price. |
 | `platformFee` | object, present only when a fee is charged | `{amount, feeBps, mint}`: the router fee, already inside `destAmountOut` and `minAmountOut` (see On-chain router fee). |
 | `integratorFee` | object, present only when you asked a fee above 0 | `{amount, feeBps, mint, account}`: your own fee, already inside `destAmountOut` and `minAmountOut` (see Integrator fee). `amount` is a string in base units of `mint`; `account` is the wallet you sent. |
-| `txVersion` | number, present only on a v1 quote | `1` when the quote asked `txVersion: 1`: the swap built from it is v1. Absent on v0. |
-| `swapTag` | number, present only on a tagged quote | `1` when the quote asked `swapTag: 1`: the swap built from it is the plain form. Absent otherwise. |
+| `txVersion` | number, present only on a v1 quote | `1` when the quote asked `txVersion: 1`: the transaction built from it is v1. Absent on v0. |
+| `swapTag` | number, present only on a tagged quote | `1` when the quote asked `swapTag: 1`: the transaction built from it is the plain form. Absent otherwise. |
 | `partial`, `requestedAmountIn` | `true`, string; present only on a partial fill | Only part of your `amount_in` can fill: an input past what its one pool can pay (any venue family; the part is that bound less 3%), or a route with SOL in that cannot fill it whole (why `first_hop_unfilled`; asked again at half the amount, up to 6 times, down to 1/64, and the first part that fills is served). `srcAmountIn` is that part, `requestedAmountIn` is what you asked for, and `swap` builds the part. |
 
 Live example (2026-10-09), quoting 0.01 SOL to USDC:
@@ -103,7 +103,7 @@ Live example (2026-10-09), quoting 0.01 SOL to USDC:
 
 ### On-chain router fee (`platformFee`)
 
-The router fee is 5 bps (0.05%): an on-chain fee inside the transaction your software signs and sends. With SOL at either end it is taken in SOL, off the input on SOL in and off the output on SOL out. Otherwise it is taken in USDC/USDT from the output when the destination is USDC or USDT, else in the input token before the swap; `destAmountOut` is what you receive.
+The router fee is 5 bps (0.05%): an on-chain fee inside the transaction your software signs and sends. With SOL at either end it is taken in SOL, off the input on SOL in and off the output on SOL out. Otherwise it is taken in USDC/USDT from the output when the destination is USDC or USDT, else in the input token before the route; `destAmountOut` is what you receive.
 
 | Route | Fee | How the quote shows it |
 |---|---|---|
@@ -118,15 +118,15 @@ The fee is paid inside the router instruction of the built transaction, at the q
 
 ### Integrator fee (`integratorFee`)
 
-Send `integrator_fee_bps` with `integrator_fee_account` on `quote`, and the swap built from that quote pays your wallet that share on chain, beside the router fee. `swap` takes nothing new: it carries the fee from the quote.
+Send `integrator_fee_bps` with `integrator_fee_account` on `quote`, and the transaction built from that quote pays your wallet that share on chain, beside the router fee. `swap` takes nothing new: it carries the fee from the quote.
 
 - Token and side follow the router fee's rule (the table above): SOL when SOL is at either end, else USDC or USDT when that is the output, else the input token. `integratorFee.mint` names it.
 - Amount: `floor(base × integrator_fee_bps / 10000)`, on the router fee's base (`amount_in` off the input, the gross output off the output). The router fee does not change. `integratorFee` is present whenever the bps is above 0, even when `amount` is `"0"`.
 - Off the input, `srcAmountIn` stays gross and the hop-0 `inAmount` values add up to `amount_in` less both fees. Off the output, `destAmountOut` is net of both.
-- A SOL fee is paid to the wallet in lamports. A token fee is paid to the wallet's associated token account for `integratorFee.mint`, which must already exist: nothing in the swap creates it.
-- Skipped, never failed: when that token account is missing or cannot receive, or a SOL fee would leave the wallet below the rent-exempt minimum, the fee is not paid, the swap still lands and the trader keeps the amount. The same holds, for both fees, when the fee is due in an input token that is a Token-2022 mint with a transfer hook program set, frozen by default or non-transferable (the tokens that pay no router fee, above). `integratorFee` shows the amount in every one of these cases.
-- Off the output the fee is a share of the output the route actually delivers, so `integratorFee.amount` is an estimate there and exact off the input, where it is what leaves the trade: a Token-2022 input mint's own transfer fee is held back from what reaches the wallet.
-- The fee wallet is one more account in the swap instruction, on v0 and v1, and counts toward `maxAccounts`.
+- A SOL fee is paid to the wallet in lamports. A token fee is paid to the wallet's associated token account for `integratorFee.mint`, which must already exist: nothing in the transaction creates it.
+- Skipped, never failed: when that token account is missing or cannot receive, or a SOL fee would leave the wallet below the rent-exempt minimum, the fee is not paid, the transaction still lands and the signer keeps the amount. The same holds, for both fees, when the fee is due in an input token that is a Token-2022 mint with a transfer hook program set, frozen by default or non-transferable (the tokens that pay no router fee, above). `integratorFee` shows the amount in every one of these cases.
+- Off the output the fee is a share of the output the route actually delivers, so `integratorFee.amount` is an estimate there and exact off the input, where it is what leaves the input: a Token-2022 input mint's own transfer fee is held back from what reaches the wallet.
+- The fee wallet is one more account in the instruction, on v0 and v1, and counts toward `maxAccounts`.
 
 ### `quote`: errors
 
@@ -157,7 +157,7 @@ Send `integrator_fee_bps` with `integrator_fee_account` on `quote`, and the swap
 | 429 | -32005 | `free tier at capacity on this node: all free traffic shares one budget; retry after Retry-After, or upgrade` | Free quote plan only: all free traffic on this host shares 1000 req/s. Wait `Retry-After`, or buy a quote plan. |
 | 429 | -32005 | `free quote plan at capacity: free quotes share a fixed part of the quote lane; retry after Retry-After, or upgrade the quote plan` | Free quote plan only: free quotes share 8 of the node's quote-lane slots. Wait `Retry-After`, or buy a quote plan. |
 | 200 | -32051 | `no route` | No path for this pair and size. `error.data` = `{reason, why, direct_why?, message?}`; act on `why` (table below). `message` is the engine's reason in one plain sentence, for logs. |
-| 200 | -32053 | `sell exceeds what the curve can pay` | `error.data` = `{code:"sell_exceeds_real_sol", why?, requested?, max_amount_in?, max_out?, real_sol_reserves?, real_quote_reserves?, quote_mint?}`. An input past what its one pool can pay, any venue family. The engine has already tried the part the pool can pay (`max_amount_in` less 3%), which normally answers ok as a `partial` quote, so this error means that part failed too. `max_out` is the most it pays at `max_amount_in`. If `why` is `partial_below_fee`, that part pays less than the swap costs to land: stop. If `max_amount_in` is 0, nothing pays: stop. With no `why`, that part did not route or the bound moved: quote again well under `max_amount_in`, or stop. |
+| 200 | -32053 | `sell exceeds what the curve can pay` | `error.data` = `{code:"sell_exceeds_real_sol", why?, requested?, max_amount_in?, max_out?, real_sol_reserves?, real_quote_reserves?, quote_mint?}`. An input past what its one pool can pay, any venue family. The engine has already tried the part the pool can pay (`max_amount_in` less 3%), which normally answers ok as a `partial` quote, so this error means that part failed too. `max_out` is the most it pays at `max_amount_in`. If `why` is `partial_below_fee`, that part pays less than the transaction costs to land: stop. If `max_amount_in` is 0, nothing pays: stop. With no `why`, that part did not route or the bound moved: quote again well under `max_amount_in`, or stop. |
 | 200 | -32054 | `token has no live pool` | Nothing routes this token (engine `why:"no_live_pool"`). Stop polling it; check again after minutes, not seconds. |
 | 200 | -32055 | `no route fits the account cap` | The cap (`maxAccounts`, or 64 under `swapTag: 1`) left no route (`error.data.why` `accounts_over_cap`). Raise `maxAccounts` (at most 64), lower `amount_in`, or quote without both `maxAccounts` and `swapTag`; even then the pair may have no route. |
 | 503 | -32011 | `quote upstream stale` | A momentary decline (a feed is reloading). `error.data.why` is one of `stale_pool`, `family_head_dead`, `tick_window_moved`, `pool_keys_missing`, `graduating` (a bonding curve has completed and the pool that replaces it is not serving yet), or `direct_why` is one of `stale_stamp`, `row_fresh_dist`, `row_fresh_dead_head`, `feed_gap`, `no_reserve`. Retry after `Retry-After` with backoff. |
@@ -182,7 +182,7 @@ Send `integrator_fee_bps` with `integrator_fee_account` on `quote`, and the swap
 | `leg_one_way` | A non-SOL route whose leg back through SOL does not price. | Try another pair. The engine holds this answer for 2 s for the same mint, side and amount, so do not re-ask it inside 2 s. |
 | `pair_unknown` | No pool is known for this pair (`direct_why:"no_body"` is the common form). | Check the mints and try another pair. Retry no faster than every 30 s. |
 | `no_candidate`, `hub_refused`, `hub_none_fits`, `hub_leg_too_wide`, `partner_no_liquidity`, `via_sol_unchained` | No path at this size right now. | Try a smaller `amount_in` once. Otherwise retry no faster than every 30 s, or stop. |
-| `first_hop_unfilled`, `tail_unfilled`, `curve_room_exceeded` | The route cannot fill this amount (`curve_room_exceeded`: the amount is more than the bonding curve has left before it completes). With SOL in, the engine has already asked again at half the amount, down to 1/64, and serves any part that fills as a `partial` quote, so there `first_hop_unfilled` means no part filled, or the part that filled spends less SOL than the swap's fee. | With SOL in, quote under 1/64 of this `amount_in` or stop for this pair. Otherwise quote a smaller `amount_in`. |
+| `first_hop_unfilled`, `tail_unfilled`, `curve_room_exceeded` | The route cannot fill this amount (`curve_room_exceeded`: the amount is more than the bonding curve has left before it completes). With SOL in, the engine has already asked again at half the amount, down to 1/64, and serves any part that fills as a `partial` quote, so there `first_hop_unfilled` means no part filled, or the part that filled spends less SOL than the transaction's fee. | With SOL in, quote under 1/64 of this `amount_in` or stop for this pair. Otherwise quote a smaller `amount_in`. |
 | `transaction_too_large`, `legs_over_cap`, `trace_too_long` | The route does not fit in one transaction. | Quote a smaller `amount_in`, or pin fewer families with `dex`. For `transaction_too_large`, also try `txVersion: 1`. |
 | `pool_dead` | The route needs a pool that is held out for 30 s after a failed build. | Retry after 30 s, or try another pair. |
 | `no_route_in_pinned_dex` | No one-hop route from `src_mint` to `dst_mint` in the families you pinned; a pin never falls back to another venue. | Drop the pin, or pin other families. |
@@ -210,15 +210,15 @@ Send `integrator_fee_bps` with `integrator_fee_account` on `quote`, and the swap
 | `minAmountOut` | string | The floor the transaction enforces. It equals the quote's `minAmountOut`, after a reroute too. |
 | `computeUnitLimit` | number | The compute limit set in the transaction. |
 | `priorityFeeLamports` | string | The priority fee the transaction pays: `computeUnitLimit × price / 1,000,000`, rounded up on v0 and down on v1 (a v1 transaction carries the fee in lamports in its config). The price is yours, or the network price when you sent none. Example: 161,000 CU at 10,000 micro-lamports per CU is 1,610 lamports. |
-| `rentLamports` | string or null | An upper bound on the rent for the token accounts the swap creates (refundable when they are closed). `null` when unknown. |
+| `rentLamports` | string or null | An upper bound on the rent for the token accounts the transaction creates (refundable when they are closed). `null` when unknown. |
 | `ataCreates` | number | How many token accounts it creates. |
 | `txVersion` | number, present only on a v1 build | `1` on a v1 build; absent on v0. |
 | `routeRerouted` | object, present only after a reroute | `{why, deadPool, quotedOut, reroutedOut, floor}`, the three amounts as strings; see Reroute. |
 | `swapTag` | number, present only on a tagged build | `1` when the quote asked `swapTag: 1`; absent otherwise. A route that has no plain form is refused `-32093` with `error.data.code` `swap_tag_unroutable`: pin `dex`, change the amount, or quote without `swapTag`. |
 
-**Reroute.** If a pool on the quoted route is gone at build time (closed, a pump curve migrated, or its keys or a fee recipient's token account missing), `swap` holds that pool out of every quote for 30 s. If the transaction would be too large, or its swap instruction would carry more accounts than the quote's account cap, it holds that route shape out for 60 s. Either way it quotes again once, with the same `srcAmountIn`, `dex` or `dexes` selection, `txVersion`, `swapTag`, `maxAccounts` and `compute_unit_price_micro_lamports`, and builds the new route only if that quote keeps the same `srcAmountIn`, avoids the held pool or route and pays at least the original `minAmountOut`. The transaction then no longer follows `routePlan` and can deliver less than `destAmountOut`, never less than `minAmountOut`. The answer then carries `routeRerouted`: `why` is the build refusal that set it off (`pool_state_missing`, `pool_keys_missing`, `fee_recipient_ata_missing`, `pcurve_graduated`, `transaction_too_large` or `accounts_over_cap`), `deadPool` the pool held out (absent when the route was too large or over the cap), `quotedOut` the quote's `destAmountOut`, `reroutedOut` the new route's expected out, `floor` the floor held (the same as `minAmountOut`). Treat `minAmountOut` as the guarantee and `reroutedOut` as the estimate. If the new quote finds no route, pays less, changes the amount or does not build, `swap` answers the first build's refusal at HTTP 200: `-32081` for `pool_state_missing`, `-32083` for `transaction_too_large`, `-32055` for `accounts_over_cap`, or `-32093` with `error.data` = `{status: 422, code}` for the other three. Quote again: the held pool or route stays out of new quotes until its hold ends.
+**Reroute.** If a pool on the quoted route is gone at build time (closed, a pump curve migrated, or its keys or a fee recipient's token account missing), `swap` holds that pool out of every quote for 30 s. If the transaction would be too large, or its instruction would carry more accounts than the quote's account cap, it holds that route shape out for 60 s. Either way it quotes again once, with the same `srcAmountIn`, `dex` or `dexes` selection, `txVersion`, `swapTag`, `maxAccounts` and `compute_unit_price_micro_lamports`, and builds the new route only if that quote keeps the same `srcAmountIn`, avoids the held pool or route and pays at least the original `minAmountOut`. The transaction then no longer follows `routePlan` and can deliver less than `destAmountOut`, never less than `minAmountOut`. The answer then carries `routeRerouted`: `why` is the build refusal that set it off (`pool_state_missing`, `pool_keys_missing`, `fee_recipient_ata_missing`, `pcurve_graduated`, `transaction_too_large` or `accounts_over_cap`), `deadPool` the pool held out (absent when the route was too large or over the cap), `quotedOut` the quote's `destAmountOut`, `reroutedOut` the new route's expected out, `floor` the floor held (the same as `minAmountOut`). Treat `minAmountOut` as the guarantee and `reroutedOut` as the estimate. If the new quote finds no route, pays less, changes the amount or does not build, `swap` answers the first build's refusal at HTTP 200: `-32081` for `pool_state_missing`, `-32083` for `transaction_too_large`, `-32055` for `accounts_over_cap`, or `-32093` with `error.data` = `{status: 422, code}` for the other three. Quote again: the held pool or route stays out of new quotes until its hold ends.
 
-Live example (2026-10-09, when the default was a fixed 10,000) with the price absent: `{"transaction":"AQAA…(708 b64 chars)","blockhash":"2QpLj7ntb9aAeZLM5ByDz2QJqWJtMCWNtJuq5TC4BSnD","lastValidBlockHeight":433003717,"minAmountOut":"1081632","computeUnitLimit":161000,"priorityFeeLamports":"1610","rentLamports":"1488440","ataCreates":1}`. The decoded transaction (v0) had 3 instructions: ComputeBudget SetComputeUnitLimit, ComputeBudget SetComputeUnitPrice, and the router swap on program `cqXpiki8fwAWY72xtzqPLmstzf3MZ4kjJBhRatZrWMs`. Some builds add an idempotent token-account create, for 4.
+Live example (2026-10-09, when the default was a fixed 10,000) with the price absent: `{"transaction":"AQAA…(708 b64 chars)","blockhash":"2QpLj7ntb9aAeZLM5ByDz2QJqWJtMCWNtJuq5TC4BSnD","lastValidBlockHeight":433003717,"minAmountOut":"1081632","computeUnitLimit":161000,"priorityFeeLamports":"1610","rentLamports":"1488440","ataCreates":1}`. The decoded transaction (v0) had 3 instructions: ComputeBudget SetComputeUnitLimit, ComputeBudget SetComputeUnitPrice, and the router instruction on program `cqXpiki8fwAWY72xtzqPLmstzf3MZ4kjJBhRatZrWMs`. Some builds add an idempotent token-account create, for 4.
 
 The wallet needs: the input amount (if the input is SOL), the 5,000-lamport signature fee, `priorityFeeLamports` and `rentLamports`.
 
@@ -236,7 +236,7 @@ The wallet needs: the input amount (if the input is SOL), the 5,000-lamport sign
 | code | HTTP | message (exact) | What to do |
 |---|---|---|---|
 | -32602 | 400 | `params must carry quote_id and user_pubkey` / `params accepts only quote_id, user_pubkey, compute_unit_price_micro_lamports` / `user_pubkey must be a base58 32-byte pubkey` / `quote_id must be the 32-character quoteId of a served quote` / `compute_unit_price_micro_lamports must be a whole number from 0 to 300000` | Fix the request. |
-| -32600 | 400 | `quote is not batchable` | Send one swap per request. |
+| -32600 | 400 | `quote is not batchable` | Send one `swap` call per request. |
 | -32095 | 400 | `swap quote_id is unknown or expired; request a new quote` | Quote again. |
 | -32074 | 400 | `swap quote route carries a leg family the builder refuses` | Quote again, pinning other families with `dex`. |
 | -32081 | 200 | `swap route pool state is not loaded upstream` | Quote again. |
@@ -266,7 +266,7 @@ Send the same `src_mint`, `dst_mint`, `amount_in` and `slippage_bps` as `quote` 
 | `feeBps` (the router's plus yours) | `platformFee.feeBps` and `integratorFee.feeBps` |
 | `fee_payer` | No counterpart |
 
-The fee is not the old path's. There `fee_bps` went to 9995, a `treasury` alone meant no fee, the fee was always the input token and the swap opened your token account. Here it is 0 to 5000, both values or neither, in the router fee's token and side, and nothing opens the token account: create the wallet's associated token account for each fee token first (see Integrator fee), or that fee is skipped.
+The fee is not the old path's. There `fee_bps` went to 9995, a `treasury` alone meant no fee, the fee was always the input token and that path's transaction opened your token account. Here it is 0 to 5000, both values or neither, in the router fee's token and side, and nothing opens the token account: create the wallet's associated token account for each fee token first (see Integrator fee), or that fee is skipped.
 
 ```json
 {"jsonrpc":"2.0","id":1,"method":"quote","params":[{"src_mint":"So11111111111111111111111111111111111111112","dst_mint":"EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v","amount_in":"10000000","slippage_bps":50,"fee_bps":20,"treasury":"<YOUR_FEE_WALLET>"}]}
@@ -276,7 +276,7 @@ SOL in, so both fees come off the input: the result carries `"integratorFee":{"a
 
 ### `prices`
 
-The params are none, `{}`, or `{"mints":[...]}` with at most 64 base58 mints. The result is `{solUsd, builtUnix, priced, stale, noroute, total, rows}`. Each row is `[mint, priceUsd | null, tvlUsd, quoteMint]`. A mint the table does not carry is simply absent from `rows`; that is not an error. The table is periodic, not a per-call price oracle: it is cached for 30 s. Poll it on a timer and never call it once per swap. Errors:
+The params are none, `{}`, or `{"mints":[...]}` with at most 64 base58 mints. The result is `{solUsd, builtUnix, priced, stale, noroute, total, rows}`. Each row is `[mint, priceUsd | null, tvlUsd, quoteMint]`. A mint the table does not carry is simply absent from `rows`; that is not an error. The table is periodic, not a per-call price oracle: it is cached for 30 s. Poll it on a timer and never call it once per quote. Errors:
 
 | HTTP | code | message | What to do |
 |---|---|---|---|
@@ -287,7 +287,7 @@ The params are none, `{}`, or `{"mints":[...]}` with at most 64 base58 mints. Th
 
 ### `health`
 
-There are no params. The result is `{ok, quoteUpstream, canBuild, families[], poolStore, chainRpc, priced, total, stale, tableAgeSecs, quote_refusal_ratio}`, cached for 2 s. It reports the quote plane's own readiness. `getHealth` is the validator's liveness, which is a different question. A dependency that is down shows up as `ok:false` with its own fields zeroed, never as a 503. It costs 1 cell at your subscription tier's cached-read rate, 5 / 30 / 100 / 500 req/s (FREE / DEV / BUSINESS / PRO), and needs the quote module and the QUOTE scope. **It is advisory.** Do not gate a swap on `canBuild`; call `swap` and act on its answer. Errors: 400 `-32602 "quote is not batchable"` (in a batch); 503 `-32011 "quote plane upstream not configured"`.
+There are no params. The result is `{ok, quoteUpstream, canBuild, families[], poolStore, chainRpc, priced, total, stale, tableAgeSecs, quote_refusal_ratio}`, cached for 2 s. It reports the quote plane's own readiness. `getHealth` is the validator's liveness, which is a different question. A dependency that is down shows up as `ok:false` with its own fields zeroed, never as a 503. It costs 1 cell at your subscription tier's cached-read rate, 5 / 30 / 100 / 500 req/s (FREE / DEV / BUSINESS / PRO), and needs the quote module and the QUOTE scope. **It is advisory.** Do not gate a `swap` call on `canBuild`; call `swap` and act on its answer. Errors: 400 `-32602 "quote is not batchable"` (in a batch); 503 `-32011 "quote plane upstream not configured"`.
 
 ### Quote plans and what counts
 
@@ -302,7 +302,7 @@ Each `quote`, `swap` and `prices` call is one quote (60 cells) against the accou
 
 - Concurrency: at most **8 quote-plane calls in flight per key** and 32 node-wide. Beyond that a call waits up to 3 s for a slot, then gets 429.
 - Free quote plan: the three free budgets in the 429 rows of `quote`: errors also apply; a paid quote plan has none.
-- Quote-plane calls cost **0 credits**; the plan is the meter, so they are answered even when the account's credits are spent. The `sendTransaction`, `getSignatureStatuses` and `getBlockHeight` calls in the swap flow are ordinary RPC and spend credits and RPC rate.
+- Quote-plane calls cost **0 credits**; the plan is the meter, so they are answered even when the account's credits are spent. The `sendTransaction`, `getSignatureStatuses` and `getBlockHeight` calls are ordinary RPC and spend credits and RPC rate.
 
 ### Complete recipe: quote, build, sign with your own wallet, send, confirm (Node 18+, `npm i @solana/web3.js`)
 
@@ -452,8 +452,8 @@ export async function signSwap(b64, keyPair) {
 - [ ] Sign only as `user_pubkey`; never modify the message.
 - [ ] Send with `skipPreflight:true`, confirm with `getSignatureStatuses`, and quote again after `lastValidBlockHeight` passes.
 - [ ] Treat `platformFee` and any `integratorFee` as already netted in `destAmountOut` / `minAmountOut`; do not subtract them again.
-- [ ] Respect `partial`: the swap spends `srcAmountIn`, not what you asked for.
+- [ ] Respect `partial`: the transaction spends `srcAmountIn`, not what you asked for.
 - [ ] Read the HTTP status and `error.code` together; HTTP 200 can carry an `error`. Retry only 429, 503 and getTransactionsForAddress's `-32602` `the walk read no history`, with jittered backoff that honours `retry-after-ms`.
-- [ ] Do not poll `prices` per swap (30 s cache); do not gate swaps on `health.canBuild`.
+- [ ] Do not poll `prices` per quote (30 s cache); do not gate `swap` calls on `health.canBuild`.
 - [ ] At most 8 quote-plane calls in flight per key.
 

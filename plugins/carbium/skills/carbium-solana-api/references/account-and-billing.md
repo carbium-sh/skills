@@ -58,12 +58,12 @@ Limits an agent must know:
 - Every 429 on RPC and the quote plane carries `retry-after-ms`, the exact wait: never retry before it. A free account whose calls are refused with `rate limit exceeded` in most hours of a day (at least 60 refusals an hour, in 20 of the last 24 hours) is suspended; its keys then answer 401 `api key suspended; contact support`.
 - A free account holds one key: another `POST /v1/keys` answers 409 `key limit reached: the free tier allows 1 key; revoke one or upgrade`.
 
-The whole sequence in one file, in TypeScript on `@solana/kit`. Node 22.18 or later runs it as is, with two packages: `npm i @solana/kit @noble/hashes` (it was run with 8.6.0 and 2.4.0). `KEYPAIR` names your keypair, a solana-keygen JSON file (without it the run makes a new one). Add `PLAN=starter` (a Quote plan) or `TIER=dev` (an RPC tier) to buy that plan too, on carbium.sh only: it pays before the first call and sends the payment through `SOLANA_RPC` (any Solana RPC; `https://api.mainnet-beta.solana.com` when unset).
+The whole sequence in one file, in TypeScript on `@solana/kit`. Node 22.18 or later runs it as is, with two packages: `npm i @solana/kit@8.6.0 @noble/hashes@2.4.0`. `KEYPAIR` names your keypair, a solana-keygen JSON file (without it the run makes a new one). Add `PLAN=starter` (a Quote plan) or `TIER=dev` (an RPC tier) to buy that plan too, on carbium.sh only: it pays before the first call and sends the payment through `SOLANA_RPC` (any Solana RPC; `https://api.mainnet-beta.solana.com` when unset).
 
 ```ts
 // Onboard to Carbium with only a Solana keypair, no browser and no inbox: a free account, its key, the free Quote plan, a first call
 // and a first quote; then, if you ask for one, a paid plan paid in USDC or USDT from the same wallet (carbium.sh only).
-//   npm i @solana/kit @noble/hashes
+//   npm i @solana/kit@8.6.0 @noble/hashes@2.4.0
 //   KEYPAIR=~/agent.json node onboard.ts            free account, key and Quote plan (Node 22.18+ runs TypeScript as is)
 //   KEYPAIR=~/agent.json PLAN=starter node onboard.ts    and the Quote API Starter plan (or TIER=dev for an RPC tier)
 //   KEYPAIR=~/agent.json ACCOUNT_KEY=read node onboard.ts  and an account API key for your automation (read or full), saved to ./carbium-account-key

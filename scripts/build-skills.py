@@ -60,7 +60,7 @@ GUIDES = {
             ("WebSocket (JSON-RPC 2.0 subscriptions over WSS)", "references/websocket.md", True),
             ("Carbon stream (Yellowstone gRPC)", "references/carbon-stream.md", True),
             ("Webhooks (a signed HTTPS POST per finalized transaction)", "references/webhooks.md", True),
-            ("Quote and swap (`quote`, `swap`, `prices`, `health`)", "references/quote-and-swap.md", True),
+            ("Quote and router (`quote`, `swap`, `prices`, `health`)", "references/quote-and-swap.md", True),
             ("Cross-plane: key states, credits, limits, retry", "references/cross-plane.md", True),
             ("Account, keys and billing", "references/account-and-billing.md", True),
             ("Account API keys (run the account by API)", "references/account-api-keys.md", True),

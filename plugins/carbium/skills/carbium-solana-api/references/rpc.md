@@ -5,27 +5,27 @@ Contents, with the line each part starts on in this file:
 - Wire rules (follow all of them): line 23
 - How to read any answer (decision order): line 42
 - Method catalogue: what is served and how: line 50
-- Not served, refused or absent: line 102
-- Scans: getProgramAccounts, getTokenAccountsByOwner, getTokenAccountsByDelegate: line 121
-- getSupply and getLargestAccounts (aggregate cache): line 158
-- Point reads: getAccountInfo, getMultipleAccounts: line 165
-- History: getTransaction, getBlock, getSignaturesForAddress, getTransactionsForAddress: line 171
-- Commitment and minContextSlot: line 192
-- Batching: line 197
-- Sending and simulating: line 205
-- Credits, rate and concurrency limits: line 215
-- Error playbook: line 233
-- JavaScript clients: line 316
-- Agent checklist: line 438
+- Not served, refused or absent: line 104
+- Scans: getProgramAccounts, getTokenAccountsByOwner, getTokenAccountsByDelegate: line 123
+- getSupply and getLargestAccounts (aggregate cache): line 160
+- Point reads: getAccountInfo, getMultipleAccounts: line 167
+- History: getTransaction, getBlock, getSignaturesForAddress, getTransactionsForAddress: line 173
+- Commitment and minContextSlot: line 194
+- Batching: line 199
+- Sending and simulating: line 206
+- Credits, rate and concurrency limits: line 216
+- Error playbook: line 234
+- JavaScript clients: line 317
+- Agent checklist: line 439
 
-Endpoint: `POST https://services.carbium.sh` (port 443). One request is one JSON object, or a JSON array of up to 100 objects for a batch. Every answer is JSON-RPC 2.0, and `id` echoes yours. "The door" below is the gateway at this address: it checks every call's key, rate and credits before anything serves it.
+Endpoint: `POST https://services.carbium.sh` (port 443). One request is one JSON object, or a JSON array of up to 100 objects for a batch. Every answer is JSON-RPC 2.0, and `id` echoes yours. "The door" below is the gateway at this address.
 
 ### Wire rules (follow all of them)
 
 | Rule | Value | If broken |
 |---|---|---|
-| HTTP method | `POST` only. `GET`/`HEAD /livez` is the keyless health check (bodiless 204). `GET /cq1/quote` is the old quote path: use the `quote` method (see [Quote and swap](https://carbium.sh/skill/quote.md)). Any other non-POST gets a bodiless 404. `OPTIONS` is the CORS preflight (204). | 404 or 405 |
-| Credential | The full raw key (`c_serv_...`). Carriers, in the order the door reads them: `x-api-key` header, `authorization: Bearer <key>`, first path segment `https://services.carbium.sh/<key>`, query `?api-key=` / `?api_key=` / `?apiKey=`, then `x-token` header. Prefer the header. | 401 `-32001` |
+| HTTP method | `POST` only. `GET`/`HEAD /livez` is the keyless health check (bodiless 204). `GET /cq1/quote` is the old quote path: use the `quote` method (see [Quote and router](https://carbium.sh/skill/quote.md)). Any other non-POST gets a bodiless 404. `OPTIONS` is the CORS preflight (204). | 404 or 405 |
+| Credential | The full raw key (`c_serv_...`). Carriers, in read order: `x-api-key` header, `authorization: Bearer <key>`, first path segment `https://services.carbium.sh/<key>`, query `?api-key=` / `?api_key=` / `?apiKey=`, then `x-token` header. No key: `quote`, `swap`, `prices`, `health`, `getHealth`, `getVersion`, `getSlot`, `getBlockHeight`, `getEpochInfo`, `getLatestBlockhash`, `isBlockhashValid`, `getGenesisHash` only, 30 calls a minute per IP address (IPv6: per /56) in all, then 429 `PUBLIC_LIMITED`; batch calls each count, a batch over 30 gets 401 `KEY_REQUIRED`. | 401 `-32001` |
 | Body size | at most 50 KB (1 KB = 1,024 bytes) | HTTP 413, `-32600` `request body exceeds the byte cap` |
 | Key order | `"method"` must come BEFORE `"params"` in each request object, and must sit within the first 1,024 bytes of the object. A single `"method"` key per object. | HTTP 400 `-32600` `params before method` / `method beyond position cap` / `duplicate method key` |
 | `params` | A JSON array (positional), as agave expects. The exceptions take an object: `getPriorityFeeEstimate` and `qn_estimatePriorityFees` (or a one-element array holding it), the ten DAS methods (`getAsset` also takes `["<id>"]`), and `quote`, `swap` and `prices`. | 200 `-32602` `invalid params` |
@@ -54,8 +54,8 @@ Cells are the admission charge against your rate bucket. Credits are the billing
 | Methods | Cells per call | FREE | DEV | BUSINESS | PRO (req/s per account) |
 |---|---|---|---|---|---|
 | getHealth getVersion getSlot getBlockHeight getEpochInfo getBalance getLatestBlockhash getEpochSchedule getFeeForMessage getFirstAvailableBlock getGenesisHash getAgGenesisCert getHighestSnapshotSlot getIdentity getInflationGovernor getInflationRate getMaxRetransmitSlot getMaxShredInsertSlot getMinimumBalanceForRentExemption getSlotLeader getStakeMinimumDelegation getTransactionCount isBlockhashValid minimumLedgerSlot getBlockCommitment | 1 | 5 | 30 | 100 | 500 |
-| getBlockProduction getBlockTime getInflationReward getLeaderSchedule getRecentPerformanceSamples getRecentPrioritizationFees getSignatureStatuses getSlotLeaders getPriorityFeeEstimate qn_estimatePriorityFees | 5 | 1 | 6 | 20 | 100 |
-| getVoteAccounts | 50 | 0.1 | 0.6 | 2 | 10 |
+| getBlockProduction getBlockTime getLeaderSchedule getRecentPerformanceSamples getRecentPrioritizationFees getSignatureStatuses getSlotLeaders getPriorityFeeEstimate qn_estimatePriorityFees | 5 | 1 | 6 | 20 | 100 |
+| getVoteAccounts getInflationReward | 50 | 0.1 | 0.6 | 2 | 10 |
 | getClusterNodes | 100 | 0.05 | 0.3 | 1 | 5 |
 | getAccountInfo getMultipleAccounts getTokenAccountBalance getTokenSupply | 10 | 0.5 | 15 | 50 | 400 |
 | getBlocks getBlocksWithLimit | 50 | 0.5 | 3 | 5 | 20 |
@@ -76,7 +76,9 @@ Where each method is served and what it costs in credits:
 |---|---|---|
 | getHealth getVersion getSlot getBlockHeight getEpochInfo getBalance getLatestBlockhash isBlockhashValid getMinimumBalanceForRentExemption getGenesisHash getAgGenesisCert getIdentity getTransactionCount getBlockCommitment getFeeForMessage getStakeMinimumDelegation getInflationGovernor getInflationRate getEpochSchedule getSlotLeader getHighestSnapshotSlot getMaxRetransmitSlot getMaxShredInsertSlot minimumLedgerSlot getFirstAvailableBlock | door cache (150 ms per-slot TTL, 1 s near-constant TTL) or validator | 1 |
 | getSignatureStatuses getRecentPerformanceSamples getRecentPrioritizationFees getBlockProduction getBlockTime getPriorityFeeEstimate qn_estimatePriorityFees | validator / door | 5 |
-| getLeaderSchedule getSlotLeaders getInflationReward | validator (1 permit) | 10 |
+| getLeaderSchedule getSlotLeaders | validator (1 permit) | 10 |
+| getInflationReward | validator (1 permit) | 55 |
+| history getSignatureStatuses | validator (1 permit) | 10 a signature + 5 |
 | getVoteAccounts | validator, cached 150 ms | 5 |
 | getClusterNodes | validator, cached 1 s | 5 |
 | getAccountInfo getTokenAccountBalance getTokenSupply | local hot index for write-hot accounts, otherwise validator (1 permit) | 15 |
@@ -198,9 +200,8 @@ Token scans are billed by rows: 205 credits cover the first 20 rows, then 10 cre
 
 - At most 100 elements; the whole batch's cells are charged in one check.
 - Any element that is refused refuses the whole batch: every element comes back with the same error and its own `id`. Upstream method errors stay per element.
-- At most 2 elements per batch may hold a validator permit. The permit methods are `getAccountInfo`, `getMultipleAccounts`, `getTokenAccountBalance`, `getTokenSupply`, `getTransaction`, `getSignaturesForAddress`, `getTransactionsForAddress`, `getBlocks`, `getBlocksWithLimit`, `getLeaderSchedule`, `getSlotLeaders` and `getInflationReward`. A third returns 429 `-32005` `blocking-slot capacity exceeded: external pool` (`SLOT_CAP_EXCEEDED`, `retryable: true`). For a batch this refusal is permanent: split it and do not retry it as is.
+- At most 2 elements per batch may hold a validator permit: `getAccountInfo`, `getMultipleAccounts`, `getTokenAccountBalance`, `getTokenSupply`, `getTransaction`, `getSignaturesForAddress`, `getTransactionsForAddress`, `getBlocks`, `getBlocksWithLimit`, `getLeaderSchedule`, `getSlotLeaders`, `getInflationReward` and a history `getSignatureStatuses`. A third returns 429 `-32005` `blocking-slot capacity exceeded: external pool` (`SLOT_CAP_EXCEEDED`, `retryable: true`). In a batch it is permanent: split the batch.
 - Never batch: `getProgramAccounts`, `getTokenAccountsByOwner`, `getTokenAccountsByDelegate`, `getSupply`, `getLargestAccounts`, `getTransactionsForAddress`, `getPriorityFeeEstimate`, `qn_estimatePriorityFees`, `quote`, `swap`, `prices`, `health`.
-- Good batch material: the 1-cell and 5-cell reads plus up to 2 permit methods.
 
 ### Sending and simulating
 
@@ -255,7 +256,7 @@ Door refusals (admission). Every one carries `error.data.reason` and `retryable`
 | 403 | -32050 | `module not enabled for this account` | MODULE_NOT_ENABLED | Quote/swap/prices/health need the quote module. Add it with `POST https://carbium.sh/v1/modules/quote`, your session or a Full control account API key, and the JSON body `{"plan": "free"}` (the free plan), or on the dashboard's MODULES page. |
 | 429 | -32005 | `rate limit exceeded` | RATE_LIMITED | Wait `retry-after-ms` plus jitter. |
 | 429 | -32005 | `heavy-class rate limit exceeded` | HEAVY_CLASS_LIMITED | Wait `retry-after-ms`. Shared with other customers for simulate. |
-| 429 | -32005 | `blocking-slot capacity exceeded: <external\|compute\|scan\|get_block> pool`, `scan-index lane capacity exceeded: chot_lane`, `DAS lane capacity exceeded: das_lane` | SLOT_CAP_EXCEEDED | Lower your concurrency and retry after 100 ms. A batch with more than 2 permit methods never fits: split it. |
+| 429 | -32005 | `blocking-slot capacity exceeded: <external\|compute\|scan\|get_block> pool`, `scan-index lane capacity exceeded: chot_lane`, `DAS lane capacity exceeded: das_lane` | SLOT_CAP_EXCEEDED | Lower your concurrency and retry after 100 ms. Split a batch with more than 2 permit methods. |
 | 429 | -32005 | `overloaded` | LOAD_SHED | Back off 1 to 5 s. |
 | 429 | -32005 | `free tier limit for your network reached: ...` | FREE_SUBNET_LIMITED | FREE plan, or quote calls on the free quote plan: every free caller on your network shares one budget. Wait `retry-after-ms`, or upgrade (the quote plan, for quote calls). |
 | 429 | -32005 | `free tier at capacity on this node: ...` | FREE_TIER_BUSY | FREE plan, or quote calls on the free quote plan: all free traffic shares one budget. Wait `retry-after-ms`, or upgrade (the quote plan, for quote calls). |

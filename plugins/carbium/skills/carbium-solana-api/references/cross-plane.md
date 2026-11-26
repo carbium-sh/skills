@@ -59,7 +59,7 @@ Backoff means: wait the larger of the server's hint (`retry-after-ms`, else `Ret
 | gRPC RESOURCE_EXHAUSTED `credits exhausted` / `consumer_credits_exhausted` | gRPC | No | Buy a plan or upgrade. | Immediately. |
 | 429 / -32005 (including the Free network limits and, on calls that cost credits, `CREDITS_PENDING`), gRPC RESOURCE_EXHAUSTED (rate, or `credits for this account are still loading on this node; retry after Retry-After`) | all | Yes | Back off, honouring `retry-after-ms`. Lower concurrency (quote: at most 8 in flight per key). | 4 attempts, then lower your request rate. |
 | 429 / -32010 `CHOT_INDEX_UNAVAILABLE` (scan index behind) | RPC scans | Yes | Back off from 100 ms (100, 200, 400 ... capped at 5 s), honouring `retry-after-ms`. | About 6 tries, then surface the error. |
-| 503 / -32011 and other 503s (breaker, upstream down, `cooling down`, `stale`) | RPC, quote, swap, prices | Yes | Back off, honouring `Retry-After`. | 4 attempts. For a swap, quote again if more than 30 s have passed since the quote. |
+| 503 / -32011 and other 503s (breaker, upstream down, `cooling down`, `stale`) | RPC, quote, swap, prices | Yes | Back off, honouring `Retry-After`. | 4 attempts. For a `swap` call, quote again if more than 30 s have passed since the quote. |
 | 504 (scan over its deadline) | RPC | Yes, once | Narrow the request. | 1 retry. |
 | Network error or timeout, no response | all | Yes | Back off. | 4 attempts. A `sendTransaction` with no response may have landed: check the signature status before sending again. |
 | 200 / -32051 `no route`, -32054 | quote | No (see the [why table](https://carbium.sh/skill/quote.md)) | Change the pair or size, or wait the named window. | Do not loop faster than every 30 s. |
@@ -68,7 +68,7 @@ Backoff means: wait the larger of the server's hint (`retry-after-ms`, else `Ret
 | 400 / -32095, -32074; 200 / -32081, -32082, -32083, -32096; 200 / -32093 | swap | Quote again | Get a new `quote`, then `swap`. | 3 rounds. |
 | 200 / -32098 | swap | No | The wallet must hold `gate_min` of `gate_mint`. | Immediately. |
 | 200 / -32099 | swap | No | Stop for this token. | Immediately. |
-| On-chain `Custom:6004` (under the slippage floor) | after send | Quote again | Quote, swap, sign, send again. | 3 rounds. |
+| On-chain `Custom:6004` (under the slippage floor) | after send | Quote again | `quote`, `swap`, sign, send again. | 3 rounds. |
 | On-chain, any other `Custom` code | after send | No | It is the venue's own error (see [Signing, sending and confirming](https://carbium.sh/skill/quote.md)). | Immediately. |
 | Blockhash expired (block height > `lastValidBlockHeight`, not landed) | after send | Quote again | Never re-sign the old message. | 3 rounds. |
 | WS close 1013 `slow_consumer` / `delivery_overload_retry` | WS | Yes | Reconnect with backoff, read faster, subscribe to less. | Back off further after 3 closes in a row. |

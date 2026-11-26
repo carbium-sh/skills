@@ -3,7 +3,7 @@
 The `carbium` plugin gives your coding agent two of Carbium's guides as skills, in Claude Code, Cursor and Codex:
 
 - `carbium-solana-api`, from https://carbium.sh/skill.md: RPC, DAS, WebSocket subscriptions, the Carbon gRPC stream
-  and quote and swap at services.carbium.sh, and webhooks and the account API at carbium.sh.
+  and quote and router at services.carbium.sh, and webhooks and the account API at carbium.sh.
 - `carbium-dca`, from https://carbium.io/docs/dca/skill.md: the DCA API at dex.carbium.io.
 
 Each skill is its guide word for word, cut at its sections. Its `SKILL.md` holds the opening sections and a table of
